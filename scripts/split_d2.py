@@ -143,10 +143,13 @@ def main() -> int:
         "# val: points at the VALIDATION split. It must never point at test —\n"
         "# doing so selects best.pt on the test split and burns the evaluate-once\n"
         "# guarantee without any visible symptom.\n"
-        f"path: {OUT.resolve().as_posix()}\n"
-        "train: train/images\n"
-        "val: val/images\n"
-        "test: test/images\n"
+        "# Paths are relative to this file's own directory. Ultralytics falls back to\n"
+        "# the yaml's parent when `path:` is absent; an absolute path here would be\n"
+        "# machine-specific, and a relative `path:` would resolve against Ultralytics'\n"
+        "# global DATASETS_DIR instead of this repo.\n"
+        f"train: ../{(OUT / 'train' / 'images').relative_to(REPO).as_posix()}\n"
+        f"val: ../{(OUT / 'val' / 'images').relative_to(REPO).as_posix()}\n"
+        f"test: ../{(OUT / 'test' / 'images').relative_to(REPO).as_posix()}\n"
         "\n"
         "nc: 1\n"
         "names:\n"
@@ -158,9 +161,11 @@ def main() -> int:
     # The guarantee this file exists to protect.
     lines = dict(l.split(": ", 1) for l in YAML.read_text(encoding="utf-8").splitlines()
                  if l[:1].isalpha() and ": " in l)
-    assert lines["val"] == "val/images", f"val: does not point at val -> {lines['val']}"
-    assert lines["train"] != lines["val"] != lines["test"], "split paths collide"
-    print("check: val -> val/images, distinct from train and test")
+    assert lines["val"].endswith("/val/images"), f"val does not point at val -> {lines['val']}"
+    assert len({lines["train"], lines["val"], lines["test"]}) == 3, "split paths collide"
+    for k in ("train", "val", "test"):
+        assert (YAML.parent / lines[k]).is_dir(), f"{k} path does not resolve: {lines[k]}"
+    print("check: val -> val/images, all three distinct and resolvable from configs/")
     return 0
 
 

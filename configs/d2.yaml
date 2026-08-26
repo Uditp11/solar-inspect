@@ -11,10 +11,13 @@
 # val: points at the VALIDATION split. It must never point at test —
 # doing so selects best.pt on the test split and burns the evaluate-once
 # guarantee without any visible symptom.
-path: C:/Claude Playground/Machine Learning and automation/solar-inspect/data/d2_split
-train: train/images
-val: val/images
-test: test/images
+# Paths are relative to this file's own directory. Ultralytics falls back to
+# the yaml's parent when `path:` is absent; an absolute path here would be
+# machine-specific, and a relative `path:` would resolve against Ultralytics'
+# global DATASETS_DIR instead of this repo.
+train: ../data/d2_split/train/images
+val: ../data/d2_split/val/images
+test: ../data/d2_split/test/images
 
 nc: 1
 names:
