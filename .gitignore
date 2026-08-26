@@ -1,0 +1,12 @@
+data/
+runs/
+*.pt
+*.pth
+*.onnx
+*.zip
+*.z0*
+*.gif
+docs/private/
+__pycache__/
+.venv/
+.ipynb_checkpoints/
