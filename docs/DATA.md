@@ -75,8 +75,8 @@ class id `0`** (single class), and **zero boxes fall outside [0,1] or extend pas
 image edge**. The 1.5 h conversion budget is not needed.
 
 **Missing from the archive:** there is no `data.yaml` and no README — only images and
-labels. Ultralytics needs a `data.yaml`; it has to be written by hand. Single class,
-so this is a five-line file, not a task.
+labels. Ultralytics needs one, so `scripts/split_d2.py` generates `configs/d2.yaml`
+alongside the split it defines. Single class, `0: panel`.
 
 ### Images
 
@@ -88,10 +88,14 @@ so this is a five-line file, not a task.
   content here**, which is why the project's field is `delta_dn_uncalibrated` and never
   a temperature.
 
-### Boxes
+### Boxes — two counts, and the second is the one that matters
 
-- 26,678 total, matching the dataset's stated count.
-- train 18,487 · val 5,828 · test 2,363.
+- **26,678 across the 353 published files**, matching the dataset's stated count.
+  This number **counts duplicates** (see below).
+- **19,525 across the 252 unique images.** Every detection denominator in this project
+  uses this one.
+- Published per-split: train 18,487 · val 5,828 · test 2,363. These splits are not used
+  — see the re-split below.
 - Median box **56.2 × 36.6 px**. (For reference: 12 µm pitch × 30 m / 9.1 mm ≈ 4 cm/px,
   so a 2 m × 1 m module lands around 50 × 25 px. The measured median is the right size.)
 - Mean **75.6 boxes/image**, median 64 — but **max 584**.
@@ -120,14 +124,15 @@ train or val, byte-for-byte identical.**
   and 101 source frames appear in two splits each.
 
 Evaluating the published test split measures memorisation, not generalisation.
-**A re-split is required before any detection number means anything** — see the open
-decision at the bottom of this file.
+**The published splits are discarded.** See "The split actually used" below and
+ADR 0002.
 
-**2. Nine images carry more than 300 boxes (max 584), against Ultralytics'
-`max_det=300` default.** The design note that `max_det` truncation is "fine at D2's
-~75 panels/frame" holds for the mean and not for the tail: 9 of 353 frames (2.5%)
-would be silently truncated at the default. This is a measured bug on this dataset,
-not a hypothetical one.
+**2. Eight unique frames carry more than 300 boxes (max 584), against Ultralytics'
+`max_det=300` default.** (Nine of the 353 *files*, but two of those are the same image;
+8 of the 252 unique frames, 3.2%.) The design note that `max_det` truncation is "fine
+at D2's ~75 panels/frame" holds for the mean and not for the tail. This is a measured
+bug on this dataset, not a hypothetical one. `configs/det_yolo.yaml` sets
+**`max_det: 1000`**.
 
 **Also:** two train images have no label file at all
 (`DJI_20230213170209_0001_T_JPG…`, `DJI_20230213170213_0003_T_JPG…`), so there are 233
@@ -236,18 +241,46 @@ or use inverter fixed effects.
 
 ---
 
-## Open decision — D2 re-split
+## The split actually used — decided, see ADR 0002
 
-The published D2 splits cannot be used as published. Options, cheapest first:
+Deduplicate by content hash, then segment the 252 unique frames into **sorties** at
+acquisition-time gaps longer than 300 s, and assign whole sorties to splits.
+Reproduce with `python scripts/split_d2.py`; the result is `configs/d2.yaml`.
 
-1. **Deduplicate by content hash, then re-split by source frame.** 252 unique images →
-   roughly 176/50/26 at 70/20/10. Cheap and correct as far as byte-identity goes.
-2. **Deduplicate, then split by flight run.** Consecutive DJI frames within one run
-   (`DJI_2023021315…` vs `…16…` vs `…17…`) are near-duplicates of each other even when
-   not byte-identical, so option 1 still leaks visually-similar content across splits.
-   Grouping by acquisition-time run is the honest version. Costs one grouping function.
-3. Keep the published splits and report the contamination alongside the number.
-   Not recommended — the number would be meaningless and the caveat cannot rescue it.
+| Sortie | Window | Images | Boxes | Mean/frame | Split |
+|---:|---|---:|---:|---:|---|
+| 1 | 15:29–15:30 | 7 | 1,515 | 216.4 | train |
+| 2 | 15:35–15:47 | 51 | 4,929 | 96.6 | **val** |
+| 3 | 15:57–16:21 | 129 | 9,097 | 70.5 | train |
+| 4 | 16:34–16:53 | 63 | 3,984 | 63.2 | **test** |
+| 5 | 17:02 | 2 | 0 | 0.0 | train |
 
-This changes the meaning of every detection number, so it needs a decision before
-Module 2 starts, and an ADR either way.
+**138 / 51 / 63 images · 10,612 / 4,929 / 3,984 boxes · ≈55/20/25.**
+
+Verified through Ultralytics' own loader: three distinct `labels.cache` files, image and
+box counts as above, 2 background frames in train.
+
+### The reason is acquisition-condition shift, not overlap
+
+An earlier draft justified grouping on the grounds that consecutive frames are
+near-duplicates. **That was asserted rather than measured, and it is false.** 32×32
+normalised correlation, adjacent unique frames (≤20 s apart) versus random pairs:
+
+| | mean | median | p90 |
+|---|---:|---:|---:|
+| adjacent (≤20 s) | 0.127 | 0.080 | 0.696 |
+| random pairs | 0.032 | 0.012 | 0.250 |
+
+15 of 213 adjacent pairs exceed 0.8; 3 exceed 0.9. Consistent with the dataset paper's
+non-overlapping-frames claim. The reason that does survive: the flight spans 15:29–17:02,
+so sun angle and thermal loading shift materially across it, and holding out a whole
+acquisition window tests the thing that genuinely differs between splits. It is also
+nearly free.
+
+**Consequence: detection numbers here are not comparable to any published number on D2**,
+because they are not the published split. That has to be stated wherever one appears.
+
+**70/20/10 is unreachable** given sortie sizes of 7/51/129/63/2, and forcing it would
+mean splitting a sortie, which gives up the only property the decision buys. 63 test
+images is also a better base for "what's your uncertainty on that?" than the ~26 a plain
+70/20/10 over 252 frames would have produced.

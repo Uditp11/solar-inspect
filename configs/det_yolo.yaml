@@ -1,0 +1,24 @@
+# Detection config, pre-declared before any test-split evaluation.
+#
+# max_det is the reason this file exists at this point in the project rather than later.
+# Ultralytics defaults to max_det=300. Measured on D2's 252 unique frames, 8 carry more
+# than 300 boxes (max 584), and 3 of those 8 land in the test split under the sortie
+# assignment in configs/d2.yaml. At the default, those frames would be silently
+# truncated and per-image panel-count error would be wrong in the headline eval with no
+# error message anywhere. 1000 clears the observed maximum with room to spare.
+
+data: configs/d2.yaml
+model: yolov8n.pt
+
+# Train
+epochs: 100
+batch: 16
+imgsz: 640
+seed: 0
+patience: 20
+device: 0
+
+# Inference / eval — applies to val, test and predict alike.
+max_det: 1000
+conf: 0.001    # low, so the PR curve is not truncated before AP is computed
+iou: 0.7       # NMS IoU; swept 0.3-0.8 separately for the panel-count-error figure

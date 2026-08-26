@@ -25,12 +25,12 @@ and reported with the size of the split it was measured on.
 
 | Module | Data | Metric | Value | Split size |
 |---|---|---|---|---|
-| 1 · Segmentation (site footprint) | D3 PV01 | IoU / Dice | TODO | TODO |
-| 1 · Naive colour-threshold baseline | D3 PV01 | IoU / Dice | TODO | TODO |
-| 2 · Detection | D2 | mAP@0.5 (mine) | TODO | TODO |
-| 2 · Detection | D2 | mAP@0.5 (torchmetrics) | TODO | TODO |
-| 2 · Detection | D2 | mAP@0.5:0.95 (torchmetrics) | TODO | TODO |
-| 2 · Detection | D2 | per-image panel-count error | TODO | TODO |
+| 1 · Segmentation (site footprint) | D3 PV01 | IoU / Dice, **per subset** | TODO | TODO |
+| 1 · Naive colour-threshold baseline | D3 PV01 | IoU / Dice, **per subset** | TODO | TODO |
+| 2 · Detection | D2 | mAP@0.5 (mine) | TODO | 63 imgs / 3,984 boxes |
+| 2 · Detection | D2 | mAP@0.5 (torchmetrics) | TODO | 63 imgs / 3,984 boxes |
+| 2 · Detection | D2 | mAP@0.5:0.95 (torchmetrics) | TODO | 63 imgs / 3,984 boxes |
+| 2 · Detection | D2 | per-image panel-count error | TODO | 63 imgs / 3,984 boxes |
 | 3 · Tracking | D5 (synthetic) | MOTA / IDF1 / IDSW | TODO | TODO |
 | 3 · Deduplication | D5 (synthetic) | N frames → M detections → K unique | TODO | TODO |
 | 4 · Classification | D1 | macro-F1 | TODO | TODO |
@@ -80,10 +80,46 @@ all four from scratch.
 ## Modules
 
 ### 1 · Segmentation — site footprint
-TODO
+
+PV01 is 0.1 m RGB rooftop imagery from a single geography. It is a **site-footprint /
+array-extent** primitive; it does not compose with the thermal stages and it cannot
+normalise thermal statistics.
+
+**Results are reported per rooftop subset, never pooled**, because the class balance
+across the three subsets differs by a factor of ten:
+
+| Subset | Masks | Positive pixels | A null all-background model scores |
+|---|---:|---:|---:|
+| Rooftop_Brick | 138 | 5.20% | 94.8% pixel accuracy, 0 IoU |
+| Rooftop_FlatConcrete | 413 | 33.65% | 66.4% pixel accuracy, 0 IoU |
+| Rooftop_SteelTile | 94 | 50.41% | 49.6% pixel accuracy, 0 IoU |
+| **Pooled** | 645 | 30.00% | 70.0% pixel accuracy, 0 IoU |
+
+That spread is the argument for per-subset reporting. Pooling hides it, and a pooled
+figure would make the null model look uniformly mediocre when on Brick it is deceptively
+strong and on SteelTile it is worse than a coin flip — the positive class is the
+majority there.
+
+TODO — measured IoU/Dice, the naive baseline, overlay figures, and the greyscaled-D2
+negative result.
 
 ### 2 · Detection
-TODO
+
+**D2's published splits are not used.** 353 published files are only 252 unique images,
+and 34 of the 35 published test images are byte-identical to a train or val image. The
+split here is deduplicated by content hash and grouped by acquisition sortie —
+**138 / 51 / 63 images, 10,612 / 4,929 / 3,984 boxes**. See
+[ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md).
+
+Because this is not the published split, **no number below is comparable to a published
+number on D2.**
+
+`max_det` is set to **1000**, not Ultralytics' default of 300. Eight of the 252 unique
+frames carry more than 300 boxes (max 584) and three of those land in the test split, so
+the default would have silently truncated 3.2% of frames — and per-image panel-count
+error, the domain metric, would have been wrong with no error message anywhere.
+
+TODO — measured mAP, the NMS threshold sweep figure, panel-count error.
 
 ### 3 · Tracking
 TODO
