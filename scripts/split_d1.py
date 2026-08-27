@@ -4,12 +4,15 @@ The dataset has no official split, so any comparison against a published number
 on D1 is a comparison against a different split. This script makes ours explicit
 and fixed, and makes it impossible to change it by accident.
 
+Runs **after** scripts/dedup_d1.py, and reads the exclusion list it writes.
+Splitting first and deduplicating afterwards would leave a near-identical pair
+straddling train and test, which is D2's contamination problem in a new costume.
+
 Grouping was checked before splitting randomly. module_metadata.json holds
 exactly {image_filepath, anomaly_class} for each of the 20,000 crops -- no site,
 no flight, no inspection date, no source frame, no module id. There is nothing to
 group on, so a stratified random split is the correct choice here. If a grouping
-field ever appears, this script is wrong and D2's contamination problem arrives
-in a new costume: see docs/DATA.md and ADR 0002.
+field ever appears, this script is wrong: see docs/DATA.md and ADR 0002.
 
 Ratio is 70/15/15, stratified per class, seed 0, chosen off the *rare* classes
 rather than the common ones. Diode-Multi has 175 images and becomes 122/26/27.
@@ -41,10 +44,11 @@ REPO = Path(__file__).resolve().parents[1]
 META = REPO / "data" / "d1" / "module_metadata.json"
 FULL = REPO / "data" / "d1_split.json"
 PINNED = REPO / "configs" / "d1_split.json"
+DEDUP = REPO / "configs" / "d1_dedup.json"
 
 SEED = 0
 PCT = {"train": 70, "val": 15}          # test takes the remainder
-N_TOTAL = 20_000
+N_RAW = 20_000
 N_CLASSES = 12
 
 
@@ -63,8 +67,16 @@ def main() -> int:
     extra = {k for v in meta.values() for k in v} - {"image_filepath", "anomaly_class"}
     assert not extra, f"metadata gained fields {sorted(extra)} -- check for grouping first"
 
+    dedup = json.loads(DEDUP.read_text(encoding="utf-8"))
+    dropped = set(dedup["drop"])
+    assert len(dropped) == dedup["n_dropped"], "d1_dedup.json disagrees with itself"
+    n_total = N_RAW - len(dropped)
+    assert n_total == dedup["n_after"], "d1_dedup.json disagrees with itself"
+
     by_class: dict[str, list[str]] = {}
     for entry in meta.values():
+        if entry["image_filepath"] in dropped:
+            continue
         by_class.setdefault(entry["anomaly_class"], []).append(entry["image_filepath"])
 
     rng = random.Random(SEED)
@@ -87,8 +99,9 @@ def main() -> int:
     assert not (splits["train"] & splits["val"]), "train and val overlap"
     assert not (splits["train"] & splits["test"]), "train and test overlap"
     assert not (splits["val"] & splits["test"]), "val and test overlap"
-    assert sum(len(v) for v in splits.values()) == N_TOTAL, "split does not cover all 20,000"
-    assert len(assignment) == N_TOTAL, f"expected {N_TOTAL} entries, got {len(assignment)}"
+    assert sum(len(v) for v in splits.values()) == n_total, "split does not cover the data"
+    assert len(assignment) == n_total, f"expected {n_total} entries, got {len(assignment)}"
+    assert not (set(assignment) & dropped), "a dropped image reached the split"
     assert len(counts) == N_CLASSES, f"expected {N_CLASSES} classes, got {len(counts)}"
     for cls, c in counts.items():
         for s in ("train", "val", "test"):
@@ -115,6 +128,8 @@ def main() -> int:
                      "assignment lives in data/d1_split.json (gitignored); this file "
                      "pins it. sha256 is over the sorted 'image_filepath,split' lines.",
                 "seed": SEED,
+                "excluded_by": "configs/d1_dedup.json",
+                "n_excluded": len(dropped),
                 "ratios_pct": {"train": PCT["train"], "val": PCT["val"],
                                "test": 100 - PCT["train"] - PCT["val"]},
                 "total": tot["total"],

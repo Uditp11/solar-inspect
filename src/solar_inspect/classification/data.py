@@ -61,11 +61,50 @@ def _build_cache(paths: list[str]) -> np.ndarray:
     return out
 
 
+def load_images(device: str | torch.device | None = None
+                ) -> tuple[torch.Tensor, torch.Tensor, list[str], list[str]]:
+    """Every D1 crop as one uint8 tensor, with no reference to any split.
+
+    Split-free on purpose: scripts/dedup_d1.py has to look at the pixels *before*
+    scripts/split_d1.py exists, because what it drops changes what there is to
+    split. Returns (images, labels, classes, paths); row order is sorted
+    image_filepath, which is the order the split hash is computed over.
+    """
+    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    meta = json.loads((D1 / "module_metadata.json").read_text(encoding="utf-8"))
+
+    paths = sorted(e["image_filepath"] for e in meta.values())
+    n_on_disk = sum(1 for _ in (D1 / "images").glob("*.jpg"))
+    if n_on_disk != len(paths):
+        raise RuntimeError(f"metadata lists {len(paths)} images, {n_on_disk} on disk")
+
+    # Cache keyed on the file count: a re-download with a different number of
+    # images invalidates it.
+    if CACHE.exists() and (arr := np.load(CACHE)).shape[0] == n_on_disk:
+        print(f"cache hit: {CACHE.relative_to(REPO).as_posix()} {arr.shape}")
+    else:
+        print(f"decoding {len(paths)} JPEGs once -> {CACHE.relative_to(REPO).as_posix()}")
+        arr = _build_cache(paths)
+        CACHE.parent.mkdir(parents=True, exist_ok=True)
+        np.save(CACHE, arr)
+
+    if arr.shape != (len(paths), *HW):
+        raise ValueError(f"expected {(len(paths), *HW)}, got {arr.shape}")
+
+    classes = sorted({e["anomaly_class"] for e in meta.values()})
+    label_of = {e["image_filepath"]: classes.index(e["anomaly_class"]) for e in meta.values()}
+
+    images = torch.from_numpy(arr).unsqueeze(1).to(device)          # (N, 1, 40, 24)
+    labels = torch.tensor([label_of[p] for p in paths], dtype=torch.int64, device=device)
+    assert images.shape == (len(paths), 1, *HW), f"tensor is {tuple(images.shape)}, want (N, 1, 40, 24)"
+    return images, labels, classes, paths
+
+
 def load_d1(device: str | torch.device | None = None) -> D1Data:
     """Load D1 onto `device`, verifying the split hash and the tensor shape."""
-    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    images, labels, classes, paths = load_images(device)
+    device = images.device
 
-    meta = json.loads((D1 / "module_metadata.json").read_text(encoding="utf-8"))
     full = json.loads(FULL_SPLIT.read_text(encoding="utf-8"))
     pinned = json.loads(PINNED_SPLIT.read_text(encoding="utf-8"))
     assignment: dict[str, str] = full["assignment"]
@@ -84,38 +123,18 @@ def load_d1(device: str | torch.device | None = None) -> D1Data:
             "against the old split is now on a different dataset."
         )
 
-    paths = sorted(e["image_filepath"] for e in meta.values())
-    n_on_disk = sum(1 for _ in (D1 / "images").glob("*.jpg"))
-    if n_on_disk != len(paths):
-        raise RuntimeError(f"metadata lists {len(paths)} images, {n_on_disk} on disk")
-
-    # Cache keyed on the file count: a re-download with a different number of
-    # images invalidates it. Row order is sorted image_filepath, same order the
-    # split hash is computed over.
-    if CACHE.exists() and (arr := np.load(CACHE)).shape[0] == n_on_disk:
-        print(f"cache hit: {CACHE.relative_to(REPO).as_posix()} {arr.shape}")
-    else:
-        print(f"decoding {len(paths)} JPEGs once -> {CACHE.relative_to(REPO).as_posix()}")
-        arr = _build_cache(paths)
-        CACHE.parent.mkdir(parents=True, exist_ok=True)
-        np.save(CACHE, arr)
-
-    if arr.shape != (len(paths), *HW):
-        raise ValueError(f"expected {(len(paths), *HW)}, got {arr.shape}")
-
-    classes = sorted({e["anomaly_class"] for e in meta.values()})
-    label_of = {e["image_filepath"]: classes.index(e["anomaly_class"]) for e in meta.values()}
-
-    images = torch.from_numpy(arr).unsqueeze(1).to(device)          # (N, 1, 40, 24)
-    labels = torch.tensor([label_of[p] for p in paths], dtype=torch.int64, device=device)
-    assert images.shape == (len(paths), 1, *HW), f"tensor is {tuple(images.shape)}, want (N, 1, 40, 24)"
-
+    # The tensor holds all 20,000 rows; the split covers only the deduplicated set.
+    # Images dropped by scripts/dedup_d1.py are in `images` and in no split index,
+    # so they are loaded and never trained on, evaluated on, or normalised against.
     index = {
-        s: torch.tensor([i for i, p in enumerate(paths) if assignment[p] == s],
+        s: torch.tensor([i for i, p in enumerate(paths) if assignment.get(p) == s],
                         dtype=torch.int64, device=device)
         for s in SPLITS
     }
-    assert sum(len(v) for v in index.values()) == len(paths), "split does not cover the data"
+    n_split = sum(len(v) for v in index.values())
+    assert n_split == len(assignment), "split does not cover its own assignment"
+    if n_split != len(paths):
+        print(f"  {len(paths) - n_split} images excluded by configs/d1_dedup.json")
 
     # Statistics over the train split only. Computing them over all 20,000 leaks
     # val and test pixel intensities into the normalisation -- small, but it is
