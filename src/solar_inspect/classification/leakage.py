@@ -1,6 +1,6 @@
 """Is the near-duplicate leakage in D1 inert, or is the model scoring on it?
 
-4.4% of val and 4.5% of test have a >= 0.98 cosine neighbour in train (measured by
+4.3% of val (129) and 4.4% of test (133) have a >= 0.98 cosine neighbour in train (by
 scripts/near_dup_d1.py). Comparing raw accuracy on that subset against the rest is
 worthless: the leaky subset is overwhelmingly No-Anomaly and Offline-Module, which
 are the two easiest classes, so it would score higher than the clean set even if

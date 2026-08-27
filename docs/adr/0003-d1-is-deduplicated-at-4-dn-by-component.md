@@ -17,7 +17,7 @@ construction. Searching the pixel criterion instead — max |a − b| over the 9
 pixels, exhaustively, not as a subset of anything — finds **30 pairs at ≤ 4 DN**,
 eight more than byte equality, and **four more pairs carrying contradictory labels**.
 Three of those four put No-Anomaly against an anomaly class and two straddle a split
-boundary.
+boundary in the split that existed before this decision.
 
 An earlier draft of this decision asserted that byte-level and pixel-level dedup
 "agreed at 22 pairs, so the cheaper one is sufficient." They agree at *exact
@@ -50,6 +50,11 @@ exhaustively at each cap:
 | 4 DN | 30 | 10 | 15 |
 | 8 DN | 234 | 13 | 111 |
 | 16 DN | 10,271 | 915 | 4,928 |
+
+The straddle column is measured against the pre-dedup split `4cbb0c3d`, which is the
+state this decision was taken in and the only state in which every crop is in a split.
+`scripts/near_dup_d1.py` cannot reproduce it now — 40 images are in no split — so it
+reports two columns instead; `docs/DATA.md` carries both and explains the difference.
 
 4 DN is the end of the plateau. The pair count is still flat and the contradiction
 count has stopped moving; by 8 DN the population has begun to change character and

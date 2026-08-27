@@ -94,17 +94,28 @@ see it by construction. Searching the pixel criterion instead — max |a − b| 
 pixels, exhaustively over all 199,990,000 pairs, not as a subset of a similarity
 shortlist — gives:
 
-| max &#124;a − b&#124; | pairs | contradictory label | straddle a split | byte-identical |
-|---:|---:|---:|---:|---:|
-| 0 DN | 22 | 6 | 10 | 22 |
-| 2 DN | 25 | 9 | 11 | 22 |
-| 4 DN | 30 | 10 | 15 | 22 |
-| 8 DN | 234 | 13 | 111 | 22 |
-| 16 DN | 10,271 | 915 | 4,928 | 22 |
+| max &#124;a − b&#124; | pairs | contradictory label | straddle a split (live) | a member excluded | byte-identical |
+|---:|---:|---:|---:|---:|---:|
+| 0 DN | 22 | 6 | 0 | 22 | 22 |
+| 2 DN | 25 | 9 | 0 | 25 | 22 |
+| 4 DN | 30 | 10 | 0 | 30 | 22 |
+| 8 DN | 234 | 13 | 88 | 47 | 22 |
+| 16 DN | 10,271 | 915 | 4,770 | 183 | 22 |
+
+**The straddle column is two columns, and the reason is a measurement that changed under
+its own feet.** When the threshold was chosen, all 20,000 crops were in a split and one
+column counted pairs whose two members landed in different ones: **10 / 11 / 15 / 111 /
+4,928** at 0 / 2 / 4 / 8 / 16 DN. Those figures are what the 4 DN choice was argued
+against and they are no longer reproducible, because 40 images are now in no split at
+all. Counting an excluded image as its own bucket makes the exclusion itself look like
+straddling and reports 20 pairs at 4 DN rather than 15 — a number that measures the fix,
+not the problem. So: **straddle (live)** counts pairs both of whose members are still in
+a split, which is 0 at ≤ 4 DN by construction and is the point of the dedup; **a member
+excluded** counts the rest. Re-running `scripts/near_dup_d1.py` reproduces this table.
 
 Eight more pairs at 4 DN than byte equality finds, and **four more contradictory ones** —
 three of those pitting No-Anomaly against an anomaly class, two straddling a split
-boundary. `scripts/dedup_d1.py` therefore deduplicates at **≤ 4 DN**, by connected
+boundary in the split that existed before this exclusion. `scripts/dedup_d1.py` therefore deduplicates at **≤ 4 DN**, by connected
 component, before the split is drawn:
 [ADR 0003](adr/0003-d1-is-deduplicated-at-4-dn-by-component.md) carries the reasoning for
 the threshold and for the drop rules. **20,000 → 19,960 images**, 13,965 / 2,988 / 3,007.
@@ -228,11 +239,60 @@ across the other 95.7%.
 **Both sentences are needed.** "There is near-duplicate leakage in D1" and "it is worth
 0.005 macro-F1" are different claims, and only the second one bounds what it costs.
 
-**Open:** whether to act on this — by grouping the ≥ 0.98 components into single splits,
-by dropping them, or by leaving the split alone and publishing the bound — is not decided
-and has no ADR yet. What is decided is that the earlier reasoning for leaving it alone,
-which rested on the leakage being inert, is **wrong**: it was inferred, then measured, and
-the measurement contradicted it. The same failure ADR 0002 exists to record.
+#### The graph does not percolate, and its components are chains rather than clusters
+
+Grouping each near-duplicate cluster into a single split is only an option if the clusters
+are small. 1,323 edges over 19,960 nodes can percolate — cosine ≥ 0.98 is **not
+transitive**, so A–B and B–C at 0.98 put A and C in one component however dissimilar A and
+C are — and with 916 of the pairs inside No-Anomaly alone a single giant component was
+plausible enough that the decision below was not allowed to assume otherwise.
+
+Measured (`scripts/near_dup_d1.py`, section G): **276 non-singleton components covering
+1,054 images, largest 133.**
+
+| size | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 13 | 16 | 34 | 108 | 133 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| components | 192 | 32 | 18 | 7 | 10 | 4 | 4 | 1 | 1 | 1 | 2 | 1 | 1 | 1 | 1 |
+
+**670 images sit in components larger than 2, and 328 in components larger than 10** — 7
+components carry those 328. 38 of the 129 leaky val images and 47 of the 133 leaky test
+images are in a component larger than 10.
+
+So the graph does **not** collapse into one giant component: the largest is 0.67% of the
+split, and grouping is mechanically available. What the components are *not* is clusters of
+duplicates. Only **1,323 of the 16,341 within-component pairs are themselves ≥ 0.98
+(8.1%)** — a component is a chain, and transitivity did most of the work:
+
+| size | least similar pair inside | mean | splits | classes |
+|---:|---:|---:|---|---|
+| 133 | **0.7704** | 0.9288 | 87 / 24 / 22 | No-Anomaly 122, Diode 5, Hot-Spot 3, Shadowing 1 |
+| 108 | **0.6500** | 0.8977 | 78 / 9 / 21 | No-Anomaly 52, Offline-Module 36, Cell 7, Shadowing 5 |
+| 34 | 0.8759 | 0.9547 | 26 / 5 / 3 | No-Anomaly 28, Offline-Module 4, Hot-Spot-Multi 2 |
+| 16 | 0.8204 | 0.9528 | 14 / 1 / 1 | No-Anomaly 15, Vegetation 1 |
+| 13 | 0.9478 | 0.9764 | 10 / 1 / 2 | No-Anomaly 13 |
+
+(splits are train / val / test.)
+
+The least similar pair inside the 108-image component scores **0.6500**, against an
+all-pairs **median of 0.4765** and a **p90 of 0.7405** — it is a more ordinary pair than
+the 90th percentile of two crops drawn at random. Grouping by connected component would
+move those two images into the same split together, along with 36 Offline-Module and 7
+Cell crops that are in there because a No-Anomaly chain reached them. That is the same
+finding as the adjacent-frame result above, seen from the other side: **raw-pixel cosine
+is a weak identity test on near-uniform 40×24 imagery**, and a threshold on it does not
+define a set of duplicates.
+
+#### The decision
+
+**The split is not changed. The near-duplicates are not dropped. The bound is published.**
+See [ADR 0004](adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md) for the three
+options and why this one. The rule, in one line: **exact and near-exact duplicates are
+removed; statistical near-neighbours are measured and bounded, not removed.**
+
+The earlier reasoning for leaving the split alone, which rested on the leakage being inert,
+was **wrong** — it was inferred, then measured, and the measurement contradicted it. The
+decision survives; the argument for it does not, and the replacement is above. The same
+failure ADR 0002 exists to record.
 
 ---
 

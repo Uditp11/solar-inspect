@@ -36,6 +36,17 @@ and reported with the size of the split it was measured on.
 | 4 · Classification | D1 | macro-F1 | TODO | TODO |
 | 4 · Classification | D1 | macro-F1 at 2.2% base rate | TODO | TODO |
 | 4 · Distillation | D1 | teacher vs student macro-F1 / params | TODO | TODO |
+
+**The classification rows carry a measured leakage bound, and it belongs here rather than
+in a footnote.** Val and test each contain ~4% of images with a ≥ 0.98 cosine neighbour in
+train (129 of 2,988 and 133 of 3,007). A controlled experiment — remove the 232 train
+neighbours, retrain, 3 seeds, against a control removing the *same number of random
+same-class images* — shows the effect is causal: leaky-subset accuracy falls **4.9 points**
+under neighbour removal and **0.0000** under the random control. Diluted across the full
+split the effect is **0.005 macro-F1**, inside a seed spread of 0.012–0.019, so it is not
+measurable on the headline number at this budget. Exact and near-exact duplicates were
+removed; statistical near-neighbours were measured and bounded rather than removed. See
+[ADR 0004](docs/adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
 | 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |
 
 ---
