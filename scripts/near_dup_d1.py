@@ -21,6 +21,12 @@ because the two answers mean different things:
   with a margin gives a superset of candidates which are then checked exactly.
   Byte-hashing is reported alongside to show what it misses.
 
+It also reports the **connected components** of the >= 0.98 graph. Cosine >= 0.98
+is not transitive, so A-B and B-C at 0.98 put A and C in one component however
+dissimilar they are, and 1,350 edges over 19,960 nodes can percolate. That count
+is what decides whether grouping each cluster into a single split is an available
+option at all, so it is measured rather than assumed either way.
+
 Outputs a report to stdout and `data/d1_near_dup.json` (gitignored) holding the
 pair lists and each image's nearest train neighbour, so scripts/dedup_d1.py and
 the leakage diagnostic do not each recompute the sweep.
@@ -35,6 +41,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
@@ -193,13 +201,27 @@ def main() -> int:
     dn = near_identical_pairs(Xr, max(DN_CAPS))
     print(f"\n=== E. exhaustive max|pixel diff| (not a subset of the cosine shortlist) ===")
     print(f"byte-identical pairs (sha256 over the JPEG file): {len(byte_pairs)}")
-    print(f"{'cap':>6}{'pairs':>8}{'contradictory':>15}{'straddle split':>16}{'byte-identical':>16}")
+    # The straddle column is split into two, and the reason is a measurement that
+    # changed under its own feet. Before configs/d1_dedup.json existed, all 20,000
+    # crops were in a split (`4cbb0c3d`) and one column counted pairs whose members
+    # landed in different splits: 10 / 11 / 15 / 111 / 4,928 at 0 / 2 / 4 / 8 / 16 DN.
+    # Those are the numbers the 4 DN threshold was chosen against and they are not
+    # reproducible now, because 40 images are in no split at all -- counting an
+    # excluded image as a bucket makes exclusion itself look like straddling and
+    # reports 20 at 4 DN, which measures the fix rather than the problem. Two
+    # columns instead: the live straddle count among pairs both of whose members
+    # are still in a split (0 at <= 4 DN, by construction, which is the point of
+    # the dedup), and how many pairs have a member excluded.
+    print(f"{'cap':>6}{'pairs':>8}{'contradictory':>15}{'straddle (live)':>17}"
+          f"{'member excluded':>17}{'byte-identical':>16}")
     for cap in DN_CAPS:
         sel = [(i, j) for i, j, m in dn if m <= cap]
         contra = sum(1 for i, j in sel if cls[paths[i]] != cls[paths[j]])
-        cross = sum(1 for i, j in sel if split.get(paths[i], "dropped") != split.get(paths[j], "dropped"))
+        both = [(i, j) for i, j in sel if paths[i] in split and paths[j] in split]
+        cross = sum(1 for i, j in both if split[paths[i]] != split[paths[j]])
+        excl = len(sel) - len(both)
         bid = sum(1 for i, j in sel if (i, j) in byte_pairs)
-        print(f"{cap:>4} DN{len(sel):>8}{contra:>15}{cross:>16}{bid:>16}")
+        print(f"{cap:>4} DN{len(sel):>8}{contra:>15}{cross:>17}{excl:>17}{bid:>16}")
 
     # This table is over all 20,000 crops as published, which is the population the
     # 4 DN threshold was chosen against (ADR 0003). The dropped images are still in
@@ -229,6 +251,56 @@ def main() -> int:
           f">=0.98: {int((sa >= 0.98).sum())}")
     print("(compare with the all-pairs mean in A: if near-duplication came from "
           "consecutive acquisition, adjacent pairs would separate from the null.)")
+
+    # ---- G. connected components of the >= 0.98 graph ---------------------------
+    # The count that decides whether "group each near-duplicate cluster into one
+    # split" is even an available option. 1,350 edges over 19,960 nodes can
+    # percolate: >= 0.98 is not transitive, so A-B and B-C at 0.98 put A and C in
+    # one component however dissimilar they are. If the graph collapses into one
+    # giant component, grouping means putting most of the dataset in one split and
+    # was never available. Measured, because both outcomes are plausible from the
+    # edge count alone and the ADR is not allowed to guess which.
+    in_split = {i for i, p in enumerate(paths) if p in split}
+    node = {g: k for k, g in enumerate(sorted(in_split))}
+    edges = [(node[i], node[j]) for i, j in p98 if i in node and j in node]
+    adjm = coo_matrix((np.ones(len(edges)), tuple(zip(*edges))),
+                      shape=(len(node), len(node)))
+    _, comp = connected_components(adjm, directed=False)
+    sizes = np.bincount(comp)
+    nt = sizes[sizes > 1]
+
+    print(f"\n=== G. connected components at >= 0.98, over the {len(node)} split "
+          f"images ({len(edges)} of the {len(p98)} edges) ===")
+    print(f"non-singleton components {len(nt)}, covering {int(nt.sum())} images; "
+          f"largest {int(nt.max())}")
+    print("  size: count  " + "  ".join(f"{s}:{c}" for s, c in
+                                        sorted(Counter(nt.tolist()).items())))
+    for lo in (2, 10):
+        print(f"  images in components > {lo}: {int(nt[nt > lo].sum())} "
+              f"in {int((nt > lo).sum())} components")
+    # A component is a chain, not a clique, and the gap says how much transitivity
+    # did. If every within-component pair were >= 0.98 this ratio would be 1.0.
+    possible = int(sum(s * (s - 1) // 2 for s in nt))
+    print(f"  within-component pairs that are themselves >= 0.98: "
+          f"{len(edges)}/{possible} = {len(edges) / possible:.3f}")
+
+    print(f"\n{'size':>5}{'min cos':>10}{'mean cos':>10}   splits / classes")
+    for c in np.argsort(-sizes)[:8]:
+        rows = [sorted(in_split)[k] for k in np.where(comp == c)[0]]
+        S = (X[rows] @ X[rows].T).cpu().numpy()
+        iu = np.triu_indices(len(rows), 1)
+        sp_c = dict(Counter(split[paths[i]] for i in rows).most_common())
+        cl_c = dict(Counter(cls[paths[i]] for i in rows).most_common(4))
+        print(f"{len(rows):>5}{S[iu].min():>10.4f}{S[iu].mean():>10.4f}   {sp_c}  {cl_c}")
+    print("min cos is the least similar pair inside the component -- the two images "
+          "grouping would\nmove together on the strength of a chain. Compare with the "
+          "all-pairs median in A.")
+
+    comp_of = {g: comp[k] for g, k in node.items()}
+    for s in ("val", "test"):
+        leak = [i for i in in_split if split[paths[i]] == s and best_c[i] >= 0.98]
+        big = [i for i in leak if sizes[comp_of[i]] > 10]
+        print(f"{s}: {len(leak)} leaky images, {len(big)} of them in a component > 10")
 
     OUT.write_text(json.dumps({
         "_": "GENERATED by scripts/near_dup_d1.py. Gitignored. Row indices are into "
