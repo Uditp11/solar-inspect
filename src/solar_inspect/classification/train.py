@@ -113,12 +113,13 @@ def log_experiment(row: dict) -> None:
         "Every training run, in order. A run with `dirty=yes` was made against a\n"
         "working tree that did not match its commit, so its numbers are not\n"
         "reproducible from that SHA -- treat them as indicative only.\n\n"
-        "| run | git SHA | dirty | config | seed | eval split | epochs | wall | macro-F1 | acc | null acc |\n"
-        "|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "| run | git SHA | dirty | split | config | seed | eval split | epochs | wall | macro-F1 | acc | null acc |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     if not path.exists():
         path.write_text(header, encoding="utf-8", newline="\n")
     line = (f"| {row['run']} | `{row['sha'][:7]}` | {'yes' if row['dirty'] else 'no'} "
+            f"| `{row['split_sha'][:8]}` "
             f"| `{row['config']}` | {row['seed']} | {row['eval_split']} | {row['epochs']} "
             f"| {row['wall_s']:.0f} s | **{row['macro_f1']:.4f}** | {row['accuracy']:.4f} "
             f"| {row['null_accuracy']:.4f} |\n")
@@ -187,6 +188,11 @@ def main(config_path: str) -> int:
     sha, dirty = git_state()        # before the run writes anything; see git_state
     cfg = yaml.safe_load((REPO / config_path).read_text(encoding="utf-8"))
 
+    # Read before the run, so a row can never carry a split hash that a concurrent
+    # re-split changed underneath it.
+    split_sha = json.loads((REPO / "configs" / "d1_split.json")
+                           .read_text(encoding="utf-8"))["sha256"]
+
     d = load_d1()
     model, wall, epoch_times = fit(cfg, d)
     eval_rows, bs = d.index[EVAL_SPLIT], cfg["batch_size"]
@@ -223,8 +229,7 @@ def main(config_path: str) -> int:
         "python": sys.version.split()[0], "torch": torch.__version__,
         "cuda": torch.version.cuda,
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        "split_sha256": json.loads((REPO / "configs" / "d1_split.json")
-                                   .read_text(encoding="utf-8"))["sha256"],
+        "split_sha256": split_sha,
         "norm": {"mean": d.mean, "std": d.std},
         "params": sum(p.numel() for p in model.parameters()),
         "wall_s": wall, "median_epoch_s": float(np.median(epoch_times)),
@@ -236,6 +241,7 @@ def main(config_path: str) -> int:
     }, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     log_experiment({"run": run, "sha": sha, "dirty": dirty, "config": config_path,
+                    "split_sha": split_sha,
                     "seed": cfg["seed"], "eval_split": EVAL_SPLIT, "epochs": cfg["epochs"],
                     "wall_s": wall, "macro_f1": m["macro_f1"], "accuracy": m["accuracy"],
                     "null_accuracy": null_acc})
