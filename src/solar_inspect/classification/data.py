@@ -40,6 +40,7 @@ class D1Data:
     labels: torch.Tensor                    # int64 (N,)
     index: dict[str, torch.Tensor]          # split -> int64 row indices
     classes: list[str]                      # label id -> class name
+    paths: list[str]                        # row -> image_filepath, the row order
     mean: float                             # over the TRAIN split only
     std: float
 
@@ -127,7 +128,7 @@ def load_d1(device: str | torch.device | None = None) -> D1Data:
           + "  ".join(f"{s}={len(index[s])}" for s in SPLITS)
           + f"  train mean={mean:.4f} std={std:.4f}")
     return D1Data(images=images, labels=labels, index=index, classes=classes,
-                  mean=mean, std=std)
+                  paths=paths, mean=mean, std=std)
 
 
 if __name__ == "__main__":

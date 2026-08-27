@@ -126,27 +126,36 @@ def log_experiment(row: dict) -> None:
         f.write(line)
 
 
-def main(config_path: str) -> int:
-    sha, dirty = git_state()        # before the run writes anything; see git_state
-    cfg = yaml.safe_load((REPO / config_path).read_text(encoding="utf-8"))
+def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
+        quiet: bool = False) -> tuple[nn.Module, float, list[float]]:
+    """Train the baseline exactly as configs/cls_baseline.yaml declares it.
+
+    Extracted from main() so that a diagnostic can reproduce *this* model rather
+    than a re-typed copy of this loop that has quietly drifted from it.
+    `train_rows` overrides the train split, which is how the leakage control
+    retrains with a subset of train removed.
+    """
     torch.manual_seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    d = load_d1()
     device = d.images.device
     model = TinyCNN(len(d.classes), tuple(cfg["widths"])).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
     loss_fn = nn.CrossEntropyLoss()
 
-    train_rows, eval_rows = d.index["train"], d.index[EVAL_SPLIT]
+    train_rows = d.index["train"] if train_rows is None else train_rows
+    eval_rows = d.index[EVAL_SPLIT]
     bs = cfg["batch_size"]
     g = torch.Generator(device=device).manual_seed(cfg["seed"])
 
-    print(f"model: {sum(p.numel() for p in model.parameters()):,} params  "
-          f"train={len(train_rows)} {EVAL_SPLIT}={len(eval_rows)}  "
-          f"{len(train_rows) // bs + 1} steps/epoch")
+    if quiet:
+        print(f"  fitting seed {cfg['seed']} on {len(train_rows)} train rows", flush=True)
+    else:
+        print(f"model: {sum(p.numel() for p in model.parameters()):,} params  "
+              f"train={len(train_rows)} {EVAL_SPLIT}={len(eval_rows)}  "
+              f"{len(train_rows) // bs + 1} steps/epoch")
 
     t0 = time.perf_counter()
     epoch_times = []
@@ -165,11 +174,22 @@ def main(config_path: str) -> int:
         if device.type == "cuda":
             torch.cuda.synchronize()
         epoch_times.append(time.perf_counter() - te)
+        if quiet:
+            continue
         m = metrics(evaluate(model, d, eval_rows, bs))
         print(f"epoch {epoch:>3}  loss {total / len(perm):.4f}  "
               f"{EVAL_SPLIT} macro-F1 {m['macro_f1']:.4f}  acc {m['accuracy']:.4f}  "
               f"({epoch_times[-1]:.2f} s)")
-    wall = time.perf_counter() - t0
+    return model, time.perf_counter() - t0, epoch_times
+
+
+def main(config_path: str) -> int:
+    sha, dirty = git_state()        # before the run writes anything; see git_state
+    cfg = yaml.safe_load((REPO / config_path).read_text(encoding="utf-8"))
+
+    d = load_d1()
+    model, wall, epoch_times = fit(cfg, d)
+    eval_rows, bs = d.index[EVAL_SPLIT], cfg["batch_size"]
 
     cm = evaluate(model, d, eval_rows, bs)
     m = metrics(cm)
