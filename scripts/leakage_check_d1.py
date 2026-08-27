@@ -74,7 +74,7 @@ def main() -> int:
     bs = cfg["batch_size"]
 
     # ---- A. class-matched, on the committed baseline ---------------------------
-    model, _, _ = fit(cfg | {"seed": SEEDS[0]}, d)
+    model, *_ = fit(cfg | {"seed": SEEDS[0]}, d)
     correct = predict(model, d, rows, bs) == labels
     print(f"\n=== A. {SPLIT}: class-matched leaky vs clean (cosine >= {THR}) ===")
     r = class_matched(correct, labels, leaky, d.classes)
@@ -116,7 +116,7 @@ def main() -> int:
     for name, tr in arms.items():
         accs_l, accs_c, f1s = [], [], []
         for s in SEEDS:
-            m, _, _ = fit(cfg | {"seed": s}, d, train_rows=tr, quiet=True)
+            m, *_ = fit(cfg | {"seed": s}, d, train_rows=tr, quiet=True)
             pred = predict(m, d, rows, bs)
             ok = pred == labels
             rr = class_matched(ok, labels, leaky, d.classes)

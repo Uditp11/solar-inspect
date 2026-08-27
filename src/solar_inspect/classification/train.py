@@ -127,14 +127,52 @@ def log_experiment(row: dict) -> None:
         f.write(line)
 
 
+def class_weights(labels: torch.Tensor, k: int) -> torch.Tensor:
+    """n / (k * n_c) -- inverse frequency, normalised to average 1.
+
+    Averaging to 1 matters. It keeps the weighted loss on the same scale as
+    unweighted CE, so the arms of the ablation see comparable gradient magnitudes
+    at the single fixed LR they all share. A class absent from `labels` would
+    divide by zero, so its count is clamped to 1; it cannot contribute anyway.
+    """
+    n_c = torch.bincount(labels, minlength=k).float().clamp_min(1.0)
+    return len(labels) / (k * n_c)
+
+
+def focal_loss(logits: torch.Tensor, y: torch.Tensor, gamma: float) -> torch.Tensor:
+    """-(1 - p_t)^gamma * log p_t, mean over the batch.
+
+    gamma is the whole mechanism. At gamma=0 this is exactly cross-entropy; above
+    it, an example's gradient is scaled by (1 - p_t)^gamma, which is near zero for
+    anything the model already gets right with confidence. It reweights by
+    *difficulty*, which is a different axis from class frequency -- that is why it
+    is a separate arm here and not a variant of class weighting.
+    """
+    logp = torch.log_softmax(logits, dim=1).gather(1, y[:, None]).squeeze(1)
+    return (-((1.0 - logp.exp()) ** gamma) * logp).mean()
+
+
 def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
-        quiet: bool = False) -> tuple[nn.Module, float, list[float]]:
-    """Train the baseline exactly as configs/cls_baseline.yaml declares it.
+        quiet: bool = False) -> tuple[nn.Module, float, list[float], dict]:
+    """Train one model. The defaults are exactly configs/cls_baseline.yaml.
 
     Extracted from main() so that a diagnostic can reproduce *this* model rather
     than a re-typed copy of this loop that has quietly drifted from it.
     `train_rows` overrides the train split, which is how the leakage control
     retrains with a subset of train removed.
+
+    Four optional keys drive Task 7's ablation, and **every one defaults to the
+    baseline's behaviour**, so a config written before they existed trains the
+    identical model and ADR 0004's leakage-control numbers still reproduce here:
+
+      loss:      ce (default) | weighted_ce | focal    -- gamma from cfg["gamma"]
+      sampler:   shuffle (default) | balanced
+      schedule:  constant (default) | cosine
+      select:    last (default) | best_val
+
+    `balanced` draws len(train_rows) rows per epoch with replacement at
+    probability 1/n_c, so its epoch is the same length as every other arm's: the
+    four arms differ in what they weight, not in how many steps they get.
     """
     torch.manual_seed(cfg["seed"])
     np.random.seed(cfg["seed"])
@@ -142,28 +180,60 @@ def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
     torch.backends.cudnn.benchmark = False
 
     device = d.images.device
-    model = TinyCNN(len(d.classes), tuple(cfg["widths"])).to(device)
+    k = len(d.classes)
+    model = TinyCNN(k, tuple(cfg["widths"])).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
-    loss_fn = nn.CrossEntropyLoss()
 
     train_rows = d.index["train"] if train_rows is None else train_rows
     eval_rows = d.index[EVAL_SPLIT]
     bs = cfg["batch_size"]
     g = torch.Generator(device=device).manual_seed(cfg["seed"])
 
+    kind = cfg.get("loss", "ce")
+    y_train = d.labels[train_rows]
+    if kind == "ce":
+        loss_fn = nn.CrossEntropyLoss()
+    elif kind == "weighted_ce":
+        loss_fn = nn.CrossEntropyLoss(weight=class_weights(y_train, k).to(device))
+    elif kind == "focal":
+        gamma = float(cfg["gamma"])
+        loss_fn = lambda logits, y: focal_loss(logits, y, gamma)      # noqa: E731
+    else:
+        raise ValueError(f"unknown loss {kind!r}")
+
+    sampler = cfg.get("sampler", "shuffle")
+    if sampler == "balanced":
+        # Sampling probability 1/n_c: an epoch becomes a draw from a uniform class
+        # distribution, so Diode-Multi (175 rows) is seen as often as No-Anomaly
+        # (10,000) and each of its 175 crops is therefore seen ~57x more often.
+        w = (1.0 / torch.bincount(y_train, minlength=k).float().clamp_min(1.0))[y_train]
+    elif sampler != "shuffle":
+        raise ValueError(f"unknown sampler {sampler!r}")
+
+    sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg["epochs"])
+             if cfg.get("schedule", "constant") == "cosine" else None)
+    select = cfg.get("select", "last")
+    track = select == "best_val"
+
     if quiet:
         print(f"  fitting seed {cfg['seed']} on {len(train_rows)} train rows", flush=True)
     else:
         print(f"model: {sum(p.numel() for p in model.parameters()):,} params  "
               f"train={len(train_rows)} {EVAL_SPLIT}={len(eval_rows)}  "
-              f"{len(train_rows) // bs + 1} steps/epoch")
+              f"{len(train_rows) // bs + 1} steps/epoch  loss={kind} sampler={sampler} "
+              f"schedule={cfg.get('schedule', 'constant')} select={select}")
 
     t0 = time.perf_counter()
-    epoch_times = []
+    epoch_times, history = [], []
+    best = (-1.0, 0, None)
     for epoch in range(1, cfg["epochs"] + 1):
         te = time.perf_counter()
         model.train()
-        perm = train_rows[torch.randperm(len(train_rows), generator=g, device=device)]
+        if sampler == "balanced":
+            perm = train_rows[torch.multinomial(w, len(train_rows), replacement=True,
+                                                generator=g)]
+        else:
+            perm = train_rows[torch.randperm(len(train_rows), generator=g, device=device)]
         total = 0.0
         for i in range(0, len(perm), bs):
             rows = perm[i:i + bs]
@@ -172,16 +242,35 @@ def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
             loss.backward()
             opt.step()
             total += float(loss) * len(rows)
+        if sched is not None:
+            sched.step()
         if device.type == "cuda":
             torch.cuda.synchronize()
         epoch_times.append(time.perf_counter() - te)
-        if quiet:
+
+        if quiet and not track:
             continue
+        # Evaluation is deterministic and consumes no RNG, so running it in quiet
+        # mode does not shift the training stream that later epochs draw from.
         m = metrics(evaluate(model, d, eval_rows, bs))
-        print(f"epoch {epoch:>3}  loss {total / len(perm):.4f}  "
-              f"{EVAL_SPLIT} macro-F1 {m['macro_f1']:.4f}  acc {m['accuracy']:.4f}  "
-              f"({epoch_times[-1]:.2f} s)")
-    return model, time.perf_counter() - t0, epoch_times
+        history.append({"epoch": epoch, "train_loss": total / len(perm),
+                        "val_macro_f1": m["macro_f1"], "val_accuracy": m["accuracy"],
+                        "lr": opt.param_groups[0]["lr"]})
+        if track and m["macro_f1"] > best[0]:
+            best = (m["macro_f1"], epoch,
+                    {n: t.detach().clone() for n, t in model.state_dict().items()})
+        if not quiet:
+            print(f"epoch {epoch:>3}  loss {total / len(perm):.4f}  "
+                  f"{EVAL_SPLIT} macro-F1 {m['macro_f1']:.4f}  acc {m['accuracy']:.4f}  "
+                  f"({epoch_times[-1]:.2f} s)")
+
+    info = {"select": select, "selected_epoch": cfg["epochs"], "history": history}
+    if track:
+        model.load_state_dict(best[2])
+        info["selected_epoch"], info["best_val_macro_f1"] = best[1], best[0]
+        if not quiet:
+            print(f"selected epoch {best[1]} by {EVAL_SPLIT} macro-F1 {best[0]:.4f}")
+    return model, time.perf_counter() - t0, epoch_times, info
 
 
 def main(config_path: str) -> int:
@@ -194,7 +283,7 @@ def main(config_path: str) -> int:
                            .read_text(encoding="utf-8"))["sha256"]
 
     d = load_d1()
-    model, wall, epoch_times = fit(cfg, d)
+    model, wall, epoch_times, info = fit(cfg, d)
     eval_rows, bs = d.index[EVAL_SPLIT], cfg["batch_size"]
 
     cm = evaluate(model, d, eval_rows, bs)
@@ -233,6 +322,8 @@ def main(config_path: str) -> int:
         "norm": {"mean": d.mean, "std": d.std},
         "params": sum(p.numel() for p in model.parameters()),
         "wall_s": wall, "median_epoch_s": float(np.median(epoch_times)),
+        "select": info["select"], "selected_epoch": info["selected_epoch"],
+        "history": info["history"],
         "macro_f1": m["macro_f1"], "accuracy": m["accuracy"], "null_accuracy": null_acc,
         "per_class": {c: {"support": int(m["support"][i]), "recall": float(m["recall"][i]),
                           "precision": float(m["precision"][i]), "f1": float(m["f1"][i])}
