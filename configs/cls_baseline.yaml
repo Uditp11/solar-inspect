@@ -1,0 +1,16 @@
+# D1 classification baseline. Committed before it was evaluated.
+#
+# One config, one seed, plain cross-entropy, no class weighting, no focal loss,
+# no resampling, no pretrained backbone. This is the floor Task 7's ablation is
+# measured against, and it is deliberately not an attempt at a good number --
+# starting the ablation early with one seed produces results with no noise floor.
+#
+# Evaluation is on the VALIDATION split. train.py hardcodes that. The test split
+# is touched exactly once, after configs/cls_final.yaml is committed.
+
+seed: 0
+epochs: 30
+batch_size: 256
+lr: 0.003
+weight_decay: 0.0001
+widths: [32, 64, 128]     # three stages is the ceiling at 40x24; see model.py
