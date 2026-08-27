@@ -1,0 +1,76 @@
+# D1 imbalance ablation: four arms x three seeds, twelve runs.
+# Committed before the first arm was run. Nothing below was chosen after seeing
+# a result, and the threshold on the last line is the reason this file exists.
+#
+#   python scripts/ablation_d1.py
+#
+# ---------------------------------------------------------------------------
+# THE NOISE FLOOR, DECLARED IN ADVANCE
+# ---------------------------------------------------------------------------
+# ADR 0004's control arms measured the seed-to-seed standard deviation of val
+# macro-F1 on this split at this budget: 0.0116, 0.0187 and 0.0191 over three
+# arms of three seeds each -- call it 0.012-0.019.
+#
+# So: **any two arms whose means differ by less than 0.02 macro-F1 are reported
+# as indistinguishable, and are not ranked.** Not "the difference is small", not
+# "arm X is marginally ahead" -- indistinguishable, in the table and in the
+# README. If every arm lands inside 0.02 of every other, the finding is that
+# none of the four is measurably better than plain cross-entropy at this budget,
+# and that is a result, not a failed experiment.
+#
+# The transfer is an assumption and is worth stating: those control arms ran at
+# constant LR selecting the last epoch, while every arm here uses cosine decay
+# and selects by val macro-F1. The per-arm standard deviations measured below
+# will say whether 0.02 was generous or tight, but the threshold does not move
+# after the fact -- declaring it and then honouring it is the point.
+#
+# ---------------------------------------------------------------------------
+# THE BUDGET, FIXED ONCE
+# ---------------------------------------------------------------------------
+# Identical across all four arms and all three seeds. Task 6 measured why it has
+# to be: at 30 epochs of constant LR train loss reached 0.14 while val macro-F1
+# plateaued and oscillated from about epoch 22 (0.5922 at epoch 27, 0.5378 at
+# epoch 28, on one seed). Each arm would overfit differently, and a comparison
+# of four differently-overfit models measures the stopping rule.
+#
+# Cosine decay to zero over the 30 epochs, and the reported model is the epoch
+# with the best val macro-F1.
+#
+# **Patience: none, deliberately.** Early stopping would give the four arms
+# different numbers of gradient steps, and the arms would then differ in budget
+# as well as in loss. The full 30 epochs always run; selection is argmax over
+# them. That costs seconds at this scale and removes a confound.
+#
+# **The LR is held fixed across arms, and that is a limitation, named.** Class
+# weighting and focal loss both change the effective gradient scale, so the
+# honest comparison would sweep the LR inside each arm -- and would also confound
+# this one, since a per-arm sweep compares tuning effort as much as method. One
+# fixed LR is the defensible version at this budget. What it cannot rule out is
+# that an arm lost because 0.003 suits plain CE best.
+
+seed: 0                     # overridden per run by `seeds` below
+seeds: [0, 1, 2]
+epochs: 30
+batch_size: 256
+lr: 0.003
+weight_decay: 0.0001
+widths: [32, 64, 128]
+schedule: cosine
+select: best_val
+
+noise_floor_macro_f1: 0.02  # declared above, before any arm ran
+
+arms:
+  baseline:
+    loss: ce
+    sampler: shuffle
+  class-weights:
+    loss: weighted_ce       # w_c = n / (k * n_c), averaging to 1
+    sampler: shuffle
+  focal:
+    loss: focal
+    gamma: 2.0              # the standard value; not swept, see the LR note above
+    sampler: shuffle
+  resampling:
+    loss: ce
+    sampler: balanced       # draw 1/n_c, epoch length unchanged
