@@ -155,6 +155,10 @@ def main() -> int:
         "names:\n"
         "  0: panel\n",
         encoding="utf-8",
+        # LF explicitly. On Windows the default translates \n to \r\n, so every run
+        # rewrote configs/d2.yaml with different bytes and left the tree dirty with a
+        # diff containing no actual change. See .gitattributes.
+        newline="\n",
     )
     print(f"\nwrote {YAML.relative_to(REPO).as_posix()}")
 

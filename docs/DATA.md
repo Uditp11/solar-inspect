@@ -1,10 +1,25 @@
 # Datasets
 
-Everything here was measured on **2026-08-26** from the files that
-`scripts/download_data.py` puts on disk. No dataset is committed. Re-run
-`python scripts/download_data.py --verify` to confirm the archives match these checksums.
+Everything here was measured on **2026-08-26**. No dataset is committed.
 
-Total on disk: ~250 MB extracted, ~140 MB of archives.
+## Reproducing the data — two steps, both required
+
+```bash
+python scripts/download_data.py     # 1. fetch, checksum and extract all four datasets
+python scripts/split_d2.py          # 2. rebuild D2's split and regenerate configs/d2.yaml
+```
+
+**Step 2 is not optional.** D2's published splits are contaminated (see below) and are
+not used by anything in this project. `configs/d2.yaml` points at
+`data/d2_split/`, which only exists after step 2 — so a clone that runs only step 1 has
+the raw data on disk and no usable detection dataset.
+
+`python scripts/download_data.py --verify` re-checks the archives against the checksums
+below without touching the network. `scripts/split_d2.py` is deterministic and
+idempotent; re-running it rebuilds the same tree and leaves the working tree clean.
+
+Total on disk: ~250 MB extracted, ~140 MB of archives, plus a hardlinked split tree that
+costs effectively nothing.
 
 | # | Name | Source | Licence (as published) | Archive SHA-256 |
 |---|---|---|---|---|

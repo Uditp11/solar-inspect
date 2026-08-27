@@ -72,8 +72,16 @@ TODO — the full explanation, once the field is actually computed.
 ## Data
 
 See [`docs/DATA.md`](docs/DATA.md) for sources, licences, checksums, formats and the
-oddities found during EDA. No dataset is committed; `scripts/download_data.py` reproduces
-all four from scratch.
+oddities found during EDA. No dataset is committed. Reproducing the data is **two steps**:
+
+```bash
+python scripts/download_data.py     # 1. fetch, checksum and extract all four datasets
+python scripts/split_d2.py          # 2. rebuild D2's split and regenerate configs/d2.yaml
+```
+
+**Step 2 is not optional.** D2's published train/val/test splits are contaminated and
+are not used here; `configs/d2.yaml` points at the rebuilt split, which only exists once
+step 2 has run. See [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md).
 
 ---
 
