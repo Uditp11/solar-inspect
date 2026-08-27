@@ -111,6 +111,107 @@ That gap is about one noise floor wide and is a change in the *stopping rule*,
 not in the model — which is exactly why the budget was fixed identically across
 arms before any arm ran.
 
+## Transfer-learning baseline — ImageNet ResNet-18, val, run at `0d15ffe`
+
+| arm | val macro-F1, mean ± std | seeds | selected epochs | val accuracy | params |
+|---|---:|---|---|---:|---:|
+| resnet18, fine-tuned | **0.6770 ± 0.0074** | 0.6735 · 0.6855 · 0.6719 | 13 · 28 · 17 | 0.832 | 11,176,396 |
+
+Against the best from-scratch arm (0.5980 ± 0.0085) that is **+0.079 macro-F1,
+four times the declared floor** — the one comparison in Task 7 that is not close.
+It is also a real teacher–student gap, which is what makes the distillation in
+`configs/cls_kd.yaml` a measurement rather than a ceremony. On the four smallest
+val classes it is ahead everywhere: Diode-Multi 0.785, Soiling 0.266,
+Hot-Spot-Multi 0.541, Hot-Spot 0.562, against the small CNN's best of 0.770 /
+0.215 / 0.459 / 0.440.
+
+The two adaptations it needs — the distorting 96×96 resize, and summing conv1's
+weights across the input channel rather than replicating the grey channel — are
+argued in `src/solar_inspect/classification/resnet.py` beside the code that does
+them, each with the alternative that was not taken. Neither is ablated. Its LR is
+3e-4 rather than the 3e-3 the from-scratch CNN uses, taken as the standard
+fine-tuning default and not swept.
+
+## THE TEST EVALUATION — once, and not again
+
+**Config commit: [`c1df507`](../../../commit/c1df507).** `configs/cls_final.yaml`
+was committed and pushed to `origin/main` before `scripts/eval_test_d1.py` read
+the test split, and the script refuses to run otherwise — it checks that the file
+is tracked, unmodified, and an ancestor of `origin/main`, and prints the SHA it
+found. Run `20260827T205903Z`, split `af8781b1`, seed 0 fixed in the config.
+
+| | macro-F1 | accuracy | null model (always No-Anomaly) |
+|---|---:|---:|---:|
+| **test, 3,007 images** | **0.6956** | 0.8251 | 0.4988 |
+| val, same model, for reference | 0.6735 | 0.8310 | 0.5013 |
+
+Per class, with the support beside every rate — 27 images is not 1,500 and a
+recall computed on it does not mean the same thing:
+
+| class | support | recall | precision | F1 |
+|---|---:|---:|---:|---:|
+| No-Anomaly | 1,500 | 0.9753 | 0.9076 | 0.9402 |
+| Diode | 225 | 0.9378 | 0.9505 | 0.9441 |
+| Diode-Multi | 27 | 0.7778 | 0.8400 | 0.8077 |
+| Offline-Module | 124 | 0.6613 | 0.8200 | 0.7321 |
+| Shadowing | 158 | 0.6519 | 0.8047 | 0.7203 |
+| Vegetation | 247 | 0.7085 | 0.7202 | 0.7143 |
+| Hot-Spot | 38 | 0.5789 | 0.8462 | 0.6875 |
+| Cell | 282 | 0.7270 | 0.6231 | 0.6710 |
+| Cracking | 142 | 0.6338 | 0.6923 | 0.6618 |
+| Hot-Spot-Multi | 38 | 0.4737 | 0.6923 | 0.5625 |
+| Cell-Multi | 194 | 0.4072 | 0.5524 | 0.4688 |
+| Soiling | 32 | 0.3750 | 0.5217 | 0.4364 |
+
+The confusion matrix is in `runs/cls_final_test_20260827T205903Z/` as both a PNG
+and the raw counts in `manifest.json`. Its three largest off-diagonal cells:
+
+- **Cell-Multi → Cell, 51 of 194.** The largest single error in the matrix, and
+  the same pair Task 6's small CNN got wrong most often. Distinguishing one hot
+  cell from several is a counting problem at 40×24, and the model is not doing it.
+- **Shadowing → No-Anomaly, 37 of 158**, and **Offline-Module → No-Anomaly, 36 of
+  124.** Both are misses of a real defect, which is the expensive direction: an
+  offline module called normal is a module nobody is sent to look at.
+- **Vegetation → Cell, 32 of 247.**
+
+### The leaky/clean subgroup on test, from this same run's predictions
+
+Computed from the per-image predictions of the one test pass, not from a second
+evaluation. Class-matched, exactly as ADR 0004 does it on val.
+
+| | n | leaky acc | clean, class-matched | difference | z |
+|---|---:|---:|---:|---:|---:|
+| **test, final ResNet-18** | 133 / 2,874 | 0.9098 ± 0.0248 | 0.8893 ± 0.0076 | **+0.0204 ± 0.0260** | **+0.79** |
+| val, same ResNet-18 | 129 / 2,859 | 0.9612 ± 0.0170 | 0.9282 ± 0.0068 | +0.0331 ± 0.0183 | +1.80 |
+| val, the small CNN (ADR 0004 §A) | 129 / 2,859 | 0.9535 ± 0.0187 | 0.8484 ± 0.0097 | +0.105 ± 0.021 | +5.09 |
+
+All three rows are one model each, with binomial standard errors, so they are
+comparable in kind. The small-CNN row is the single-seed measurement, not the
+three-seed control table — those ± are seed spreads and mean something else.
+
+**This qualifies ADR 0004's bound, and in the direction opposite to the one that
+ADR predicted.** On test the leaky advantage is +0.020 and inside its own error
+bar. The val row for the *same* ResNet-18 is what isolates the cause: it is the
+**model**, not the split. Swapping the 116k-parameter CNN for the fine-tuned
+ResNet-18 takes the class-matched advantage from +0.105 (z = 5.09) to +0.033
+(z = 1.80) on identical images.
+
+The likely mechanism is a ceiling, and it is visible in the per-class rows. The
+leaky subset is 70–80% No-Anomaly, and the ResNet-18 scores **1.0000** on leaky
+No-Anomaly against **0.9814** on clean No-Anomaly — under two points of headroom
+for any advantage to live in, where the small CNN left eight. A better model
+closes the gap the leakage was exploiting. ADR 0004's consequences section said
+the opposite would happen; it now carries the correction and the retraction.
+
+**The causal claim in ADR 0004 is untouched by this.** That claim rests on the
+controlled removal experiment — 4.9 points lost under neighbour removal, 0.0000
+under the size- and class-matched random control — not on the size of the
+class-matched gap. What moves is how much the leakage is *worth to a given
+model*, which was always stated as model-specific. What it costs the headline
+number is still bounded at 0.005 macro-F1 and is still inside the noise floor.
+
+**The test split is not read again for the rest of the project.**
+
 ## Runs
 
 The `config` column carries `path#arm` for a config that declares several arms.
@@ -136,3 +237,4 @@ The `config` column carries `path#arm` for a config that declares several arms.
 | 20260827T204537Z_resnet18_s0 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 0 | val | 30 | 163 s | **0.6735** | 0.8310 | 0.5013 |
 | 20260827T204537Z_resnet18_s1 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 1 | val | 30 | 162 s | **0.6855** | 0.8330 | 0.5013 |
 | 20260827T204537Z_resnet18_s2 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 2 | val | 30 | 161 s | **0.6719** | 0.8333 | 0.5013 |
+| 20260827T205903Z | `c1df507` | no | `af8781b1` | `configs/cls_final.yaml` | 0 | test | 30 | 164 s | **0.6956** | 0.8251 | 0.4988 |

@@ -126,6 +126,27 @@ not.
 - **Val is now doing four jobs**: epoch selection, config selection, the temperature fit
   for calibration, and this leakage diagnostic. Acceptable at this budget, and better said
   here than discovered by a reader.
-- **This bound is specific to this model at this budget.** A model with more capacity to
-  memorise could turn 0.005 into something larger. The 4.9-point subgroup effect is the
+- **This bound is specific to this model at this budget.** ~~A model with more capacity to
+  memorise could turn 0.005 into something larger.~~ The 4.9-point subgroup effect is the
   part that generalises; the 0.005 is not a property of the dataset.
+
+  **Correction, 2026-08-27, after the test evaluation at `c1df507`.** The struck sentence
+  was a guess and it was wrong in direction. Measured on the *same* val images, swapping
+  the 116k-parameter CNN for the fine-tuned ResNet-18 takes the class-matched leaky
+  advantage from **+0.105 (z = +5.09) to +0.033 (z = +1.80)**; on test the same ResNet-18
+  gives **+0.020 ± 0.026 (z = +0.79)**, inside its own error bar. The larger model shows
+  *less* leaky advantage, not more.
+
+  The mechanism appears to be a ceiling rather than anything about memorisation capacity.
+  The leaky subset is 70–80% No-Anomaly, and the ResNet-18 scores 1.0000 on leaky
+  No-Anomaly against 0.9814 on clean No-Anomaly — under two points of headroom for an
+  advantage to occupy, where the small CNN left eight. A better model closes the gap the
+  leakage was exploiting.
+
+  **What this does not touch is the causal claim above**, which rests on the controlled
+  removal experiment — 4.9 points under neighbour removal against 0.0000 under the
+  size- and class-matched random control — and not on the size of the class-matched gap.
+  What is model-specific is how much the leakage is *worth*, which this ADR always said.
+  The correction is left in place rather than edited away; the same discipline as ADR 0002
+  and as the retracted inference at the top of this file. Full numbers in
+  `docs/EXPERIMENTS.md`.

@@ -33,9 +33,19 @@ and reported with the size of the split it was measured on.
 | 2 · Detection | D2 | per-image panel-count error | TODO | 63 imgs / 3,984 boxes |
 | 3 · Tracking | D5 (synthetic) | MOTA / IDF1 / IDSW | TODO | TODO |
 | 3 · Deduplication | D5 (synthetic) | N frames → M detections → K unique | TODO | TODO |
-| 4 · Classification | D1 | macro-F1 | TODO | TODO |
+| 4 · Classification | D1 | macro-F1, ResNet-18 fine-tuned | **0.6956** | 3,007 imgs (test, once) |
+| 4 · Classification | D1 | accuracy vs null model | 0.8251 vs 0.4988 | 3,007 imgs (test, once) |
+| 4 · Classification | D1 | best from-scratch CNN, macro-F1 | 0.5980 ± 0.0085 | 2,988 imgs (val, 3 seeds) |
 | 4 · Classification | D1 | macro-F1 at 2.2% base rate | TODO | TODO |
 | 4 · Distillation | D1 | teacher vs student macro-F1 / params | TODO | TODO |
+
+The test number comes from one evaluation, of a config
+([`configs/cls_final.yaml`](configs/cls_final.yaml)) committed and pushed in
+[`c1df507`](../../commit/c1df507) **before** the split was read;
+[`scripts/eval_test_d1.py`](scripts/eval_test_d1.py) refuses to run otherwise. Per-class
+recall with supports, the confusion matrix and the full ablation are in
+[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md). **D1 ships no official split, so none of these
+numbers is comparable to a published one.**
 
 **The classification rows carry a measured leakage bound, and it belongs here rather than
 in a footnote.** Val and test each contain ~4% of images with a ≥ 0.98 cosine neighbour in
@@ -44,8 +54,11 @@ neighbours, retrain, 3 seeds, against a control removing the *same number of ran
 same-class images* — shows the effect is causal: leaky-subset accuracy falls **4.9 points**
 under neighbour removal and **0.0000** under the random control. Diluted across the full
 split the effect is **0.005 macro-F1**, inside a seed spread of 0.012–0.019, so it is not
-measurable on the headline number at this budget. Exact and near-exact duplicates were
-removed; statistical near-neighbours were measured and bounded rather than removed. See
+measurable on the headline number at this budget. On the test split, for the model above,
+the class-matched leaky-minus-clean difference is **+0.020 ± 0.026 (z = 0.79)** — smaller
+than on the small CNN, because a better model has less headroom left to gain. Exact and
+near-exact duplicates were removed; statistical near-neighbours were measured and bounded
+rather than removed. See
 [ADR 0004](docs/adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
 | 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |
 

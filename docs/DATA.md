@@ -282,6 +282,27 @@ finding as the adjacent-frame result above, seen from the other side: **raw-pixe
 is a weak identity test on near-uniform 40×24 imagery**, and a threshold on it does not
 define a set of duplicates.
 
+#### And on test, from the single test evaluation, it is smaller still
+
+The equivalent class-matched breakdown on **test** comes from the per-image predictions of
+the one test pass (`c1df507`, run `20260827T205903Z`), not from a second evaluation.
+
+| | model | n leaky / clean | leaky acc | clean, class-matched | difference | z |
+|---|---|---:|---:|---:|---:|---:|
+| val | small CNN | 129 / 2,859 | 0.9535 ± 0.0187 | 0.8484 ± 0.0097 | +0.105 ± 0.021 | +5.09 |
+| val | ResNet-18 | 129 / 2,859 | 0.9612 ± 0.0170 | 0.9282 ± 0.0068 | +0.033 ± 0.018 | +1.80 |
+| **test** | **ResNet-18** | **133 / 2,874** | **0.9098 ± 0.0248** | **0.8893 ± 0.0076** | **+0.020 ± 0.026** | **+0.79** |
+
+The two val rows are the same images, so the difference between them is the **model**, not
+the split: the fine-tuned ResNet-18 shows a third of the small CNN's leaky advantage, and
+on test it is inside its own error bar. The likely reason is a ceiling — the leaky subset
+is 70–80% No-Anomaly, and the ResNet-18 scores 1.0000 there against 0.9814 on clean
+No-Anomaly, under two points of room for any advantage to sit in.
+
+This qualifies the bound and leaves the causal claim alone: the causal claim rests on the
+removal control (4.9 points lost, 0.0000 under random removal), not on the size of the
+class-matched gap. ADR 0004 predicted the opposite of this and carries the correction.
+
 #### The decision
 
 **The split is not changed. The near-duplicates are not dropped. The bound is published.**
