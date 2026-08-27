@@ -1,0 +1,53 @@
+# THE FINAL CLASSIFICATION CONFIG. Committed and pushed before the test split
+# was read, and never edited afterwards. That order is non-negotiable and it
+# fails invisibly if it is broken, so scripts/eval_test_d1.py refuses to run
+# unless this file is tracked, unmodified, and contained in origin/main.
+#
+#     python scripts/eval_test_d1.py
+#
+# ---------------------------------------------------------------------------
+# WHY THIS MODEL
+# ---------------------------------------------------------------------------
+# Selected on **val**, from the runs logged in docs/EXPERIMENTS.md at 78b2f52
+# and 0d15ffe, all on split `af8781b1`:
+#
+#   resnet18 (this config)   0.6770 +/- 0.0074
+#   baseline, plain CE       0.5980 +/- 0.0085
+#   focal, gamma=2           0.5855 +/- 0.0046
+#   resampling, balanced     0.5804 +/- 0.0039
+#   class weights            0.5615 +/- 0.0065
+#
+# The teacher is ahead of the best from-scratch arm by 0.079 macro-F1, which is
+# four times the 0.02 noise floor declared before any of them ran. This is the
+# one comparison in Task 7 that is not close, and it is the reason the selection
+# needed no tie-break: among the four small-CNN arms nothing separated, and the
+# transfer-learning baseline separated from all of them.
+#
+# ---------------------------------------------------------------------------
+# WHY SEED 0
+# ---------------------------------------------------------------------------
+# Fixed here, not chosen. Seed 0 was **not** the best of the three on val --
+# seed 1 scored 0.6855 against seed 0's 0.6735 -- and picking it anyway is the
+# point. Selecting the seed that happened to validate best and then reporting
+# its test number is a quiet way of evaluating test three times.
+#
+# One model, one test pass. The subgroup breakdown, the base-rate table and the
+# calibration numbers all come from that same pass's saved per-image logits, so
+# there is one evaluation and several views of it.
+#
+# Everything else is identical to configs/cls_resnet18.yaml, which carries the
+# reasoning for the resize, the conv1 adaptation and the 3e-4 LR.
+
+model: resnet18
+resize: 96
+pretrained: true
+
+seed: 0
+epochs: 30
+batch_size: 256
+lr: 0.0003
+weight_decay: 0.0001
+schedule: cosine
+select: best_val
+loss: ce
+sampler: shuffle

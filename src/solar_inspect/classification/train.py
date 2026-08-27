@@ -79,7 +79,8 @@ def git_state() -> tuple[str, bool]:
     return sha, dirty
 
 
-def save_confusion_figure(cm: np.ndarray, classes: list[str], path: Path) -> None:
+def save_confusion_figure(cm: np.ndarray, classes: list[str], path: Path,
+                          split: str = EVAL_SPLIT, title: str = "D1") -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -94,7 +95,7 @@ def save_confusion_figure(cm: np.ndarray, classes: list[str], path: Path) -> Non
                   [f"{c}  (n={n})" for c, n in zip(classes, cm.sum(1))], fontsize=8)
     ax.set_xlabel("predicted")
     ax.set_ylabel("true (support)")
-    ax.set_title(f"D1 baseline, {EVAL_SPLIT} split - row-normalised confusion")
+    ax.set_title(f"{title}, {split} split - row-normalised confusion")
     for i in range(len(classes)):
         for j in range(len(classes)):
             if cm[i, j]:
@@ -328,7 +329,8 @@ def main(config_path: str) -> int:
     run = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = REPO / "runs" / f"cls_baseline_{run}"
     out.mkdir(parents=True, exist_ok=True)
-    save_confusion_figure(cm, d.classes, out / f"confusion_{EVAL_SPLIT}.png")
+    save_confusion_figure(cm, d.classes, out / f"confusion_{EVAL_SPLIT}.png",
+                          title="D1 baseline")
     (out / "manifest.json").write_text(json.dumps({
         "run": run, "git_sha": sha, "git_dirty": dirty, "config_path": config_path,
         "config": cfg, "eval_split": EVAL_SPLIT, "seed": cfg["seed"],
