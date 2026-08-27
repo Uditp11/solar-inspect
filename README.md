@@ -38,7 +38,9 @@ and reported with the size of the split it was measured on.
 | 4 · Classification | D1 | best from-scratch CNN, macro-F1 | 0.5980 ± 0.0085 | 2,988 imgs (val, 3 seeds) |
 | 4 · Classification | D1 | triage precision @ 2.2% prevalence | 0.502 at recall 0.896 | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | ECE, global / class-balanced (T-scaled) | 0.021 / 0.184 | 3,007 imgs (test, once) |
-| 4 · Distillation | D1 | teacher vs student macro-F1 / params | TODO | TODO |
+| 4 · Distillation | D1 | teacher / student / distilled macro-F1 | 0.6735 / 0.5980 ± 0.0085 / 0.5987 ± 0.0075 | 2,988 imgs (val) |
+| 4 · Distillation | D1 | params, teacher vs student | 11,176,396 vs 115,948 (96×) | — |
+| 4 · Distillation | D1 | CPU latency, batch 64, 1 thread | 706.1 ms vs 228.7 ms (3.1×) | — |
 | 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |
 
 The test number comes from one evaluation, of a config
@@ -83,6 +85,9 @@ and NumPy primitives. I did not implement autograd, cuDNN kernels, or LAPACK rou
 | OLS (normal equations, GD) | ✓ | — | `np.linalg.lstsq`, scikit-learn |
 | D1 duplicate search + components | ✓ | — | SHA-256 byte equality (a subset of it) |
 | Macro-F1, per-class recall | ✓ | — | `sklearn.metrics.f1_score`, every run |
+| Focal loss, KD loss, class weights | ✓ | `F.kl_div`, `F.cross_entropy` | hand-computed, `tests/test_cls_metrics.py` |
+| ECE, temperature scaling | ✓ | `scipy.optimize.minimize_scalar` fits T | hand-computed, `tests/test_cls_metrics.py` |
+| ResNet-18 backbone | — | torchvision, ImageNet weights | — |
 
 ---
 

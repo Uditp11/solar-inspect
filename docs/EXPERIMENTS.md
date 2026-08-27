@@ -337,6 +337,90 @@ cannot tell that crew *what* is wrong: at that operating point Offline-Module
 precision is 0.20 and Hot-Spot is 0.19. Whether a module is faulty and which fault
 it has are different problems, and only the first one is answered at 2.2%.
 
+## Distillation — three rows, on val, and the KD gain is nothing
+
+Teacher is the exact seed-0 ResNet-18 behind the test number (config commit
+`c1df507`). Both student arms are trained by the same `fit()` in the same script
+on the same three seeds at the same 30-epoch cosine budget, differing in one
+config key. `configs/cls_kd.yaml` and α = 0.5, T = 4.0, declared before the run
+and not swept.
+
+| | val macro-F1 | params | CPU ms / batch of 64 | ms / image |
+|---|---:|---:|---:|---:|
+| teacher, ResNet-18 | 0.6735 (1 seed) | 11,176,396 | 706.08 | 11.0325 |
+| student, from scratch | 0.5980 ± 0.0085 | 115,948 | 228.65 | 3.5727 |
+| student, distilled | 0.5987 ± 0.0075 | 115,948 | 222.86 | 3.4822 |
+
+**KD gain: +0.0007 macro-F1. The declared floor is 0.02. Indistinguishable.**
+Distillation did not measurably help this student, at this budget, at α = 0.5 and
+T = 4. The teacher–student gap it was trying to close is **+0.0756** — real, four
+noise floors wide, and untouched.
+
+Three things keep that from being a null result nobody can check:
+
+**The middle row is why the number means anything.** A distilled student at 0.5987
+is uninterpretable on its own. It is only against the same student on hard labels
+at the same budget, 0.5980, that +0.0007 can be read at all — and the
+from-scratch arm reproduces the ablation's baseline arm seed-for-seed (0.6067 ·
+0.5897 · 0.5975), which is the evidence that it is the same experiment and not a
+second one.
+
+**The KD term is switched on, and that is checked rather than hoped.** Two of the
+three ways this loss silently fails make distillation look useless, which is
+exactly the result above, so "it didn't help" and "I wrote it wrong" have to be
+told apart. `tests/test_cls_metrics.py` pins all three: `batchmean` is exactly
+`num_classes` times `mean` (the 1/12 bug, as a number); α = 1 reduces the loss to
+plain cross-entropy; and the T² factor holds the soft term flat in T where the
+unscaled term falls as 1/T². The training trajectories also differ — the distilled
+arm selects epochs 20 · 23 · 18 against the from-scratch arm's 25 · 21 · 27 — so
+the term is carrying real gradient weight.
+
+**What is not ruled out** is that KD helps at some other (α, T). It was not swept,
+deliberately: a sweep with val selection over twelve runs finds something above
+the floor by chance, and the honest write-up of that has to begin "I searched".
+
+### Latency measures the framework, not the model
+
+**96× fewer parameters buys 3.1× less wall time.** That is not a disappointing
+speedup, it is the wrong question being asked of a 40×24 model: at this size a
+forward pass is a few hundred microseconds of arithmetic wrapped in Python
+attribute lookups and PyTorch dispatch, and per-op overhead dominates. The student
+runs 18 ops; the teacher runs several dozen. That ratio, not the FLOP ratio, is
+what the 3.1× is measuring.
+
+Conditions, stated because the number is meaningless without them: **CPU, one
+thread, batch 64, 50 warm-up passes discarded, median of 200.** Anything that
+would make this a FLOP-bound measurement — a real input size, INT8, ONNX Runtime
+or TensorRT, operator fusion, batch 1 on an embedded target — is exactly the list
+of levers this project has *not* pulled, and the honest version of "4× smaller" has
+to say what the 4× actually bought.
+
+### Where soft targets were supposed to act: Cell ↔ Cell-Multi
+
+Task 6's confusion matrix made this the prediction to check. Cell ↔ Cell-Multi is
+the largest off-diagonal pair in the project, and confusability between
+near-identical classes is precisely the structure "dark knowledge" is supposed to
+carry. Mean counts over the three seeds, on val:
+
+| | Cell → Cell-Multi | Cell-Multi → Cell | Cell F1 | Cell-Multi F1 |
+|---|---:|---:|---:|---:|
+| teacher | 22.0 | 45.0 | 0.6712 | 0.4985 |
+| student, from scratch | 39.7 | 42.0 | 0.6211 | 0.4099 |
+| student, distilled | 41.0 | 38.3 | 0.6057 | 0.4148 |
+
+**It did not act.** The distilled student moved 3.7 errors from one direction of
+the pair to the other and lost 1.5 points of Cell F1 to gain 0.5 of Cell-Multi.
+The teacher's own pattern is qualitatively different from either student's — it is
+half as likely to call a Cell a Cell-Multi and slightly *more* likely to do the
+reverse — and none of that asymmetry transferred.
+
+The most likely reason is capacity rather than the loss. The student is 116k
+parameters on 40×24 crops with three downsamples available to it; telling one hot
+cell from several is a counting problem, and a model that cannot represent the
+distinction does not learn it from being told the teacher's uncertainty about it.
+That is a hypothesis, not a measurement — the experiment that would test it is a
+capacity sweep on the student, which was not run.
+
 ## Runs
 
 The `config` column carries `path#arm` for a config that declares several arms.
@@ -363,3 +447,9 @@ The `config` column carries `path#arm` for a config that declares several arms.
 | 20260827T204537Z_resnet18_s1 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 1 | val | 30 | 162 s | **0.6855** | 0.8330 | 0.5013 |
 | 20260827T204537Z_resnet18_s2 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 2 | val | 30 | 161 s | **0.6719** | 0.8333 | 0.5013 |
 | 20260827T205903Z | `c1df507` | no | `af8781b1` | `configs/cls_final.yaml` | 0 | test | 30 | 164 s | **0.6956** | 0.8251 | 0.4988 |
+| 20260827T210715Z_student-from-scratch_s0 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 0 | val | 30 | 22 s | **0.6067** | 0.7892 | 0.5013 |
+| 20260827T210715Z_student-from-scratch_s1 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 1 | val | 30 | 22 s | **0.5897** | 0.7811 | 0.5013 |
+| 20260827T210715Z_student-from-scratch_s2 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 2 | val | 30 | 21 s | **0.5975** | 0.7815 | 0.5013 |
+| 20260827T210715Z_student-distilled_s0 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 0 | val | 30 | 26 s | **0.6036** | 0.7888 | 0.5013 |
+| 20260827T210715Z_student-distilled_s1 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 1 | val | 30 | 26 s | **0.5901** | 0.7821 | 0.5013 |
+| 20260827T210715Z_student-distilled_s2 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 2 | val | 30 | 26 s | **0.6023** | 0.7744 | 0.5013 |
