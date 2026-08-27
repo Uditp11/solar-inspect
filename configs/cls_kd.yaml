@@ -1,0 +1,61 @@
+# Distillation: the ResNet-18 teacher into the 40x24 TinyCNN. Committed before it ran.
+#
+#     python scripts/distill_d1.py
+#
+# Evaluated on **val**. The test split was spent once at c1df507 and is not read
+# again, so the three rows of the KD table are val numbers and say so.
+#
+# ---------------------------------------------------------------------------
+# THE THIRD ROW IS THE POINT
+# ---------------------------------------------------------------------------
+# Teacher / student-from-scratch / student-distilled. Without the middle row the
+# KD number is unmeasurable -- a distilled student that scores 0.60 has said
+# nothing until you know what the same student scores on hard labels at the same
+# budget. Both student arms are trained by the same fit() in the same script on
+# the same seeds, differing in one config key, so the comparison is of the loss
+# and not of two scripts.
+#
+# And the gap is judged against the 0.02 noise floor declared in
+# configs/cls_ablation.yaml, not against zero. A +0.01 KD gain on three seeds is
+# not a KD gain.
+#
+# ---------------------------------------------------------------------------
+# alpha AND T ARE DEFAULTS, NOT TUNED
+# ---------------------------------------------------------------------------
+# alpha = 0.5, T = 4.0, the values Hinton et al. use. Not swept: a sweep over
+# (alpha, T) with val-set selection on twelve runs would find something above the
+# floor by chance, and the honest report of that would have to be "I searched".
+# One setting, stated. What that leaves open is whether KD would help at some
+# other (alpha, T) -- it might, and this experiment does not answer it.
+#
+# The three details in the loss that fail silently -- log-probs into F.kl_div,
+# reduction='batchmean' rather than 'mean', and the T**2 factor -- are documented
+# on kd_loss() in src/solar_inspect/classification/train.py. Two of the three fail
+# by making distillation look useless rather than by raising.
+
+seed: 0
+seeds: [0, 1, 2]
+epochs: 30
+batch_size: 256
+lr: 0.003
+weight_decay: 0.0001
+widths: [32, 64, 128]
+schedule: cosine
+select: best_val
+
+alpha: 0.5
+kd_temperature: 4.0
+
+noise_floor_macro_f1: 0.02
+
+# The teacher is the exact model behind the reported test number: the seed-0
+# ResNet-18 of configs/cls_final.yaml, checkpointed by scripts/eval_test_d1.py.
+teacher_run: runs/cls_final_test_20260827T205903Z
+
+arms:
+  student-from-scratch:
+    loss: ce
+    sampler: shuffle
+  student-distilled:
+    loss: kd
+    sampler: shuffle

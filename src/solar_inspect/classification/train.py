@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import yaml
 from torch import nn
 
@@ -170,8 +171,31 @@ def focal_loss(logits: torch.Tensor, y: torch.Tensor, gamma: float) -> torch.Ten
     return (-((1.0 - logp.exp()) ** gamma) * logp).mean()
 
 
+def kd_loss(student_logits: torch.Tensor, teacher_logits: torch.Tensor,
+            y: torch.Tensor, alpha: float, T: float) -> torch.Tensor:
+    """alpha * CE(hard) + (1 - alpha) * T^2 * KL(soft).
+
+    Three details here each silently ruin the result if they are wrong, and two
+    of them fail by making distillation look useless rather than by raising:
+
+      - `F.kl_div` takes **log**-probabilities as its input and probabilities as
+        its target. Passing probabilities to both runs, converges, and is not KL.
+      - `reduction='batchmean'`, never `'mean'`. `'mean'` divides by every element
+        of the tensor, so at 12 classes it scales the KD term by 1/12 and the soft
+        targets stop mattering.
+      - The `T ** 2`. Soft-target gradients scale as 1/T^2, so without it the KD
+        term shrinks as T rises and the two terms stop being commensurate. It is
+        what lets alpha mean the same thing at T=1 and T=4.
+    """
+    soft = F.kl_div(F.log_softmax(student_logits / T, dim=1),
+                    F.softmax(teacher_logits / T, dim=1),
+                    reduction="batchmean")
+    return alpha * F.cross_entropy(student_logits, y) + (1.0 - alpha) * (T ** 2) * soft
+
+
 def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
-        quiet: bool = False) -> tuple[nn.Module, float, list[float], dict]:
+        quiet: bool = False,
+        teacher_logits: torch.Tensor | None = None) -> tuple[nn.Module, float, list[float], dict]:
     """Train one model. The defaults are exactly configs/cls_baseline.yaml.
 
     Extracted from main() so that a diagnostic can reproduce *this* model rather
@@ -207,15 +231,26 @@ def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
     bs = cfg["batch_size"]
     g = torch.Generator(device=device).manual_seed(cfg["seed"])
 
+    # Every loss takes (logits, y, rows). Only kd uses rows -- it needs to look up
+    # the teacher's logits for exactly the images in this batch -- but giving them
+    # all the same signature keeps one call site in the loop.
     kind = cfg.get("loss", "ce")
     y_train = d.labels[train_rows]
     if kind == "ce":
-        loss_fn = nn.CrossEntropyLoss()
+        ce = nn.CrossEntropyLoss()
+        loss_fn = lambda lo, y, r: ce(lo, y)                          # noqa: E731
     elif kind == "weighted_ce":
-        loss_fn = nn.CrossEntropyLoss(weight=class_weights(y_train, k).to(device))
+        wce = nn.CrossEntropyLoss(weight=class_weights(y_train, k).to(device))
+        loss_fn = lambda lo, y, r: wce(lo, y)                         # noqa: E731
     elif kind == "focal":
         gamma = float(cfg["gamma"])
-        loss_fn = lambda logits, y: focal_loss(logits, y, gamma)      # noqa: E731
+        loss_fn = lambda lo, y, r: focal_loss(lo, y, gamma)           # noqa: E731
+    elif kind == "kd":
+        if teacher_logits is None:
+            raise ValueError("loss: kd needs teacher_logits, indexed by global row")
+        alpha, T_kd = float(cfg["alpha"]), float(cfg["kd_temperature"])
+        loss_fn = (lambda lo, y, r:                                   # noqa: E731
+                   kd_loss(lo, teacher_logits[r], y, alpha, T_kd))
     else:
         raise ValueError(f"unknown loss {kind!r}")
 
@@ -255,7 +290,7 @@ def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
         total = 0.0
         for i in range(0, len(perm), bs):
             rows = perm[i:i + bs]
-            loss = loss_fn(model(d.batch(rows)), d.labels[rows])
+            loss = loss_fn(model(d.batch(rows)), d.labels[rows], rows)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()

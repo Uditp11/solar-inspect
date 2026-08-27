@@ -39,6 +39,7 @@ and reported with the size of the split it was measured on.
 | 4 · Classification | D1 | triage precision @ 2.2% prevalence | 0.502 at recall 0.896 | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | ECE, global / class-balanced (T-scaled) | 0.021 / 0.184 | 3,007 imgs (test, once) |
 | 4 · Distillation | D1 | teacher vs student macro-F1 / params | TODO | TODO |
+| 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |
 
 The test number comes from one evaluation, of a config
 ([`configs/cls_final.yaml`](configs/cls_final.yaml)) committed and pushed in
@@ -61,7 +62,6 @@ than on the small CNN, because a better model has less headroom left to gain. Ex
 near-exact duplicates were removed; statistical near-neighbours were measured and bounded
 rather than removed. See
 [ADR 0004](docs/adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
-| 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |
 
 ---
 
