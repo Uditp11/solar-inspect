@@ -212,6 +212,131 @@ number is still bounded at 0.005 macro-F1 and is still inside the noise floor.
 
 **The test split is not read again for the rest of the project.**
 
+## Calibration — T fitted on val, never on test
+
+`scripts/posthoc_cls_d1.py`, from the saved logits of the one test run. No
+training, no second read of the test split.
+
+**T = 2.0463.** The model was overconfident by a factor of two. Val NLL
+0.8542 → 0.5873; test NLL 0.8544 → 0.5899.
+
+| | global ECE | class-balanced ECE | mean confidence | accuracy |
+|---|---:|---:|---:|---:|
+| val, raw | 0.1183 | 0.2965 | 0.9488 | 0.8310 |
+| val, T-scaled | 0.0229 | 0.2099 | 0.8451 | 0.8310 |
+| test, raw | 0.1215 | 0.2645 | 0.9461 | 0.8251 |
+| **test, T-scaled** | **0.0211** | **0.1835** | 0.8419 | 0.8251 |
+
+**The two columns are a factor of nine apart, and that gap is the result.** Global
+ECE says the calibrated model is nearly perfect: 0.021. Class-balanced ECE — the
+mean of the per-class ECEs, so every class counts once — says 0.184. Global ECE is
+half No-Anomaly by construction, and No-Anomaly is the class the model is most
+confident and most often right about, so it drags the global number to zero and
+takes the eleven defect classes with it.
+
+Per-class ECE on test, and the row that matters is the first and the second-last:
+
+| class | support | raw | T-scaled |
+|---|---:|---:|---:|
+| Soiling | 32 | 0.5356 | **0.4133** |
+| Cell-Multi | 194 | 0.4793 | 0.3374 |
+| Hot-Spot-Multi | 38 | 0.4372 | 0.3327 |
+| Hot-Spot | 38 | 0.3409 | 0.2011 |
+| Shadowing | 158 | 0.2950 | 0.1838 |
+| Cracking | 142 | 0.2451 | 0.1492 |
+| Offline-Module | 124 | 0.2422 | 0.1456 |
+| Diode-Multi | 27 | 0.1538 | 0.1424 |
+| Vegetation | 247 | 0.2078 | 0.1052 |
+| **No-Anomaly** | **1,500** | **0.0153** | **0.0681** |
+| Cell | 282 | 0.1790 | 0.0658 |
+| Diode | 225 | 0.0424 | 0.0570 |
+
+**One global temperature made No-Anomaly worse to make everything else better.**
+Its ECE goes 0.0153 → 0.0681, a four-fold degradation on the class carrying half
+the data, and the global ECE still improved six-fold because the other eleven
+classes improved more. A single scalar cannot fix eleven differently-miscalibrated
+heads; it moves confidence mass in one direction for all of them. Soiling is still
+at 0.41 after scaling — the model's stated probability on Soiling is off by 41
+points on average, and no amount of temperature will fix that because the problem
+is that it is wrong about Soiling, not that it is confidently wrong.
+
+Reliability diagram: `runs/cls_final_test_20260827T205903Z/reliability_test.png`.
+
+## Base-rate correction — D1 is 49.9% No-Anomaly, the field is 2.2%
+
+**Two assumptions, in the same place as the table, because the arithmetic is three
+lines and the assumptions are the content.**
+
+- **A1.** Per-class sensitivity, and the whole class-conditional confusion
+  structure P(pred = c | true = k), transport unchanged from D1 to the field. D1
+  is already a mixture — pooled midwave and longwave sensors at 3–15 cm/px — so
+  "the field" is a *different* mixture, not a special case of this one.
+- **A2.** Only the anomaly/no-anomaly ratio shifts; the relative mix among the
+  eleven anomaly classes holds. This is the weaker of the two. Soiling and
+  Vegetation are seasonal and site-specific in a way a bypass-diode fault is not.
+
+Neither is obviously true, and the table below is worth exactly what they are.
+
+Under A2 the reweighting is a single constant on every anomaly class, so **recall
+is invariant to the prevalence shift and only precision moves.** There is no
+"recall at 2.2%" column because there is no such quantity.
+
+| class | test n | prior | field prior | recall | precision as measured | **precision @ 2.2%** |
+|---|---:|---:|---:|---:|---:|---:|
+| No-Anomaly | 1,500 | 0.4988 | 0.97800 | 0.9753 | 0.9076 | 0.9977 |
+| Diode-Multi | 27 | 0.0090 | 0.00039 | 0.7778 | 0.8400 | **0.8400** |
+| Diode | 225 | 0.0748 | 0.00328 | 0.9378 | 0.9505 | 0.5978 |
+| Soiling | 32 | 0.0106 | 0.00047 | 0.3750 | 0.5217 | **0.5217** |
+| Cracking | 142 | 0.0472 | 0.00207 | 0.6338 | 0.6923 | 0.5182 |
+| Cell-Multi | 194 | 0.0645 | 0.00283 | 0.4072 | 0.5524 | 0.4232 |
+| Vegetation | 247 | 0.0821 | 0.00361 | 0.7085 | 0.7202 | 0.3794 |
+| Cell | 282 | 0.0938 | 0.00412 | 0.7270 | 0.6231 | 0.3022 |
+| Hot-Spot-Multi | 38 | 0.0126 | 0.00055 | 0.4737 | 0.6923 | 0.2584 |
+| Offline-Module | 124 | 0.0412 | 0.00181 | 0.6613 | 0.8200 | **0.2022** |
+| Shadowing | 158 | 0.0525 | 0.00231 | 0.6519 | 0.8047 | 0.1977 |
+| Hot-Spot | 38 | 0.0126 | 0.00055 | 0.5789 | 0.8462 | **0.1941** |
+
+Offline-Module goes from 0.82 precision to 0.20: four out of five modules the
+model calls offline would not be, in a field where only 2.2% of modules have
+anything wrong. Hot-Spot goes 0.85 → 0.19. **This is the number that decides
+whether a model is deployable, and it is not the macro-F1.**
+
+**Diode-Multi and Soiling do not move at all**, and the reason is exact rather
+than lucky: the No-Anomaly row of the confusion matrix has a **zero** in both of
+those columns. A class the majority is never confused with has no majority-driven
+false positives to inflate, so reweighting the majority cannot touch its
+precision. Prevalence hurts precisely the classes No-Anomaly leaks into.
+
+### The threshold, chosen for a stated precision target rather than for macro-F1
+
+Flag a module if the calibrated P(any anomaly) ≥ t. The ranking is
+prevalence-invariant — the reweighting is one constant per group, so it is a
+monotone transform — which is why the sweep runs on the ordinary score and only
+the precision column is reweighted.
+
+| t | flags per 1,000 modules | recall | precision as measured | **precision @ 2.2%** |
+|---:|---:|---:|---:|---:|
+| 0.10 | 244.6 | 0.9834 | 0.8125 | 0.0884 |
+| 0.25 | 103.9 | 0.9589 | 0.9192 | 0.2030 |
+| 0.50 | 58.2 | 0.9244 | 0.9600 | 0.3497 |
+| **0.7151** | **39.3** | **0.8958** | — | **0.5019** |
+| 0.90 | 25.1 | 0.8454 | 0.9922 | 0.7404 |
+| 0.95 | 22.2 | 0.8036 | 0.9943 | 0.7948 |
+| 0.99 | 15.1 | 0.6271 | 0.9979 | 0.9136 |
+
+**Stated target: 50% precision at field prevalence — one real defect per two
+dispatches. It is met at t = 0.7151, with recall 0.8958 and 39.3 flags per 1,000
+modules.** That threshold is chosen for precision, not for macro-F1; the
+macro-F1-optimal point is plain argmax, which sits far to the left of this and
+flags 245 modules per 1,000 at 9% precision.
+
+**The binary triage decision survives the prevalence shift much better than the
+twelve-way label does**, and the two tables together are the honest summary. You
+can send a crew to 39 modules per 1,000 and expect half of them to be real. You
+cannot tell that crew *what* is wrong: at that operating point Offline-Module
+precision is 0.20 and Hot-Spot is 0.19. Whether a module is faulty and which fault
+it has are different problems, and only the first one is answered at 2.2%.
+
 ## Runs
 
 The `config` column carries `path#arm` for a config that declares several arms.

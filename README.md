@@ -36,7 +36,8 @@ and reported with the size of the split it was measured on.
 | 4 · Classification | D1 | macro-F1, ResNet-18 fine-tuned | **0.6956** | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | accuracy vs null model | 0.8251 vs 0.4988 | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | best from-scratch CNN, macro-F1 | 0.5980 ± 0.0085 | 2,988 imgs (val, 3 seeds) |
-| 4 · Classification | D1 | macro-F1 at 2.2% base rate | TODO | TODO |
+| 4 · Classification | D1 | triage precision @ 2.2% prevalence | 0.502 at recall 0.896 | 3,007 imgs (test, once) |
+| 4 · Classification | D1 | ECE, global / class-balanced (T-scaled) | 0.021 / 0.184 | 3,007 imgs (test, once) |
 | 4 · Distillation | D1 | teacher vs student macro-F1 / params | TODO | TODO |
 
 The test number comes from one evaluation, of a config
