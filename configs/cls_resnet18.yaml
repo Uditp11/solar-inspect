@@ -1,0 +1,48 @@
+# The transfer-learning baseline, and the distillation teacher.
+# ImageNet-pretrained ResNet-18 fine-tuned on D1. Committed before it was run.
+#
+#     python scripts/ablation_d1.py configs/cls_resnet18.yaml
+#
+# Same split (`af8781b1`), same three seeds, same 30-epoch cosine budget with
+# selection by val macro-F1, same ledger, same 0.02 noise floor as the ablation.
+# It runs through the same harness for that reason: a teacher measured a
+# different way from the students is not comparable to them.
+#
+# The two adaptations a 224x224 RGB backbone needs to read a 40x24 greyscale crop
+# -- the distorting resize to 96x96, and summing conv1's weights across the input
+# channel rather than replicating the grey channel -- are decided and argued in
+# src/solar_inspect/classification/resnet.py, next to the code that does them.
+# Both are stated choices with the discarded alternative written down. Neither is
+# ablated.
+#
+# **LR is 3e-4, not the 3e-3 the from-scratch CNN uses, and it is not swept.**
+# Fine-tuning pretrained weights at the LR that suits a randomly-initialised
+# 116k-parameter model destroys the features in the first few hundred steps --
+# that is the standard reason, and 3e-4 is the standard answer to it, taken as a
+# default rather than tuned. What that leaves unmeasured is whether the teacher
+# would be better still at some other LR. It would not change the teacher's role:
+# the KD comparison in Task 7 is against this teacher, whatever its ceiling.
+#
+# No layer freezing and no discriminative LRs: the whole network is fine-tuned at
+# one rate. 13,965 crops of 40x24 thermal render are far enough from ImageNet
+# that freezing the trunk is the less obvious choice, not the safe one.
+
+model: resnet18
+resize: 96
+pretrained: true
+
+seed: 0
+seeds: [0, 1, 2]
+epochs: 30
+batch_size: 256
+lr: 0.0003
+weight_decay: 0.0001
+schedule: cosine
+select: best_val
+
+noise_floor_macro_f1: 0.02   # the same floor declared in configs/cls_ablation.yaml
+
+arms:
+  resnet18:
+    loss: ce
+    sampler: shuffle

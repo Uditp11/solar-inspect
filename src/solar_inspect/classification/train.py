@@ -127,6 +127,23 @@ def log_experiment(row: dict) -> None:
         f.write(line)
 
 
+def build_model(cfg: dict, k: int) -> nn.Module:
+    """`model: tiny` (default) or `resnet18`, from one config key.
+
+    Both take (N, 1, 40, 24) -- ResNet18Gray does its own resize inside forward --
+    so every caller of fit() gets the teacher for free and no evaluation path has
+    to know which model it is holding.
+    """
+    name = cfg.get("model", "tiny")
+    if name == "tiny":
+        return TinyCNN(k, tuple(cfg["widths"]))
+    if name == "resnet18":
+        from solar_inspect.classification.resnet import ResNet18Gray
+        return ResNet18Gray(k, size=cfg.get("resize", 96),
+                            pretrained=cfg.get("pretrained", True))
+    raise ValueError(f"unknown model {name!r}")
+
+
 def class_weights(labels: torch.Tensor, k: int) -> torch.Tensor:
     """n / (k * n_c) -- inverse frequency, normalised to average 1.
 
@@ -181,7 +198,7 @@ def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
 
     device = d.images.device
     k = len(d.classes)
-    model = TinyCNN(k, tuple(cfg["widths"])).to(device)
+    model = build_model(cfg, k).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
 
     train_rows = d.index["train"] if train_rows is None else train_rows

@@ -1,6 +1,12 @@
 """D1 imbalance ablation: four arms x three seeds, evaluated on VAL.
 
-    python scripts/ablation_d1.py
+    python scripts/ablation_d1.py                          # configs/cls_ablation.yaml
+    python scripts/ablation_d1.py configs/cls_resnet18.yaml # any arms-shaped config
+
+The config path is an argument because the transfer-learning baseline needs the
+same harness -- three seeds, mean +/- std, the same ledger rows, the same
+noise-floor rule -- and a second copy of this loop is how the teacher quietly
+stops being measured the way the students were.
 
 The arms and the budget are declared in configs/cls_ablation.yaml, which was
 committed before this script was first run. So was the noise floor -- 0.02
@@ -37,10 +43,10 @@ from solar_inspect.classification.train import (EVAL_SPLIT, NULL_CLASS,  # noqa:
                                                 evaluate, fit, git_state,
                                                 log_experiment, metrics)
 
-CONFIG = "configs/cls_ablation.yaml"
+DEFAULT_CONFIG = "configs/cls_ablation.yaml"
 
 
-def main() -> int:
+def main(CONFIG: str = DEFAULT_CONFIG) -> int:
     sha, dirty = git_state()        # before anything is written; see train.git_state
     cfg = yaml.safe_load((REPO / CONFIG).read_text(encoding="utf-8"))
     split_sha = json.loads((REPO / "configs" / "d1_split.json")
@@ -90,36 +96,37 @@ def main() -> int:
               f"{'  '.join(str(e) for e in ep):>14}")
 
     # The declared rule, applied mechanically rather than by eye.
-    print(f"\npairwise, against the noise floor of {floor} declared in {CONFIG}:")
-    ranked = 0
-    for a, b in combinations(out, 2):
-        diff = out[a]["mean"] - out[b]["mean"]
-        if abs(diff) < floor:
-            print(f"  {a} vs {b}: {diff:+.4f} -- INDISTINGUISHABLE, not ranked")
-        else:
-            ranked += 1
-            hi, lo = (a, b) if diff > 0 else (b, a)
-            print(f"  {a} vs {b}: {diff:+.4f} -- {hi} above {lo}")
-    if ranked == 0:
-        print("\nNo pair of arms separates by more than the declared floor. The result "
-              "is that none of\nthe three imbalance treatments is measurably better "
-              "than plain cross-entropy at this\nbudget on this split. That is the "
-              "finding; it is not a failed experiment, and the arm\nwith the highest "
-              "mean is not the winner.")
+    if len(out) > 1:
+        print(f"\npairwise, against the noise floor of {floor} declared in {CONFIG}:")
+        ranked = 0
+        for a, b in combinations(out, 2):
+            diff = out[a]["mean"] - out[b]["mean"]
+            if abs(diff) < floor:
+                print(f"  {a} vs {b}: {diff:+.4f} -- INDISTINGUISHABLE, not ranked")
+            else:
+                ranked += 1
+                hi, lo = (a, b) if diff > 0 else (b, a)
+                print(f"  {a} vs {b}: {diff:+.4f} -- {hi} above {lo}")
+        if ranked == 0:
+            print("\nNo pair of arms separates by more than the declared floor, so no "
+                  "arm is measurably\nbetter than any other at this budget on this "
+                  "split. That is the finding; it is not a\nfailed experiment, and the "
+                  "arm with the highest mean is not the winner.")
 
     # Per-class F1 on the low-support classes, where an imbalance treatment is
     # supposed to act. A treatment can be invisible in macro-F1 and still have
     # moved the tail, and the tail is what the method claims to fix.
-    small = np.argsort([int(s) for s in out["baseline"]["runs"][0]["support"]])[:4]
+    first = next(iter(out))
+    support = out[first]["runs"][0]["support"]
+    small = np.argsort([int(s) for s in support])[:4]
     print(f"\nper-class F1 on the four smallest val classes, mean over seeds:")
     print(f"{'arm':<16}" + "".join(
-        f"{d.classes[c]} (n={out['baseline']['runs'][0]['support'][c]})".rjust(26)
-        for c in small))
+        f"{d.classes[c]} (n={support[c]})".rjust(26) for c in small))
     for arm, v in out.items():
         f1c = np.array([r["per_class_f1"] for r in v["runs"]]).mean(0)
         print(f"{arm:<16}" + "".join(f"{f1c[c]:>26.4f}" for c in small))
 
-    dest = REPO / "runs" / f"cls_ablation_{run}"
+    dest = REPO / "runs" / f"{Path(CONFIG).stem}_{run}"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "ablation.json").write_text(json.dumps({
         "run": run, "git_sha": sha, "git_dirty": dirty, "config_path": CONFIG,
@@ -132,4 +139,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CONFIG))
