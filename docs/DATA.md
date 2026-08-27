@@ -2,12 +2,27 @@
 
 Everything here was measured on **2026-08-26**. No dataset is committed.
 
-## Reproducing the data — two steps, both required
+## Reproducing the data — four steps, all required
 
 ```bash
+pip install -r requirements.txt     # 0. torch comes from PyTorch's index, not PyPI
 python scripts/download_data.py     # 1. fetch, checksum and extract all four datasets
 python scripts/split_d2.py          # 2. rebuild D2's split and regenerate configs/d2.yaml
+python scripts/split_d1.py          # 3. rebuild D1's split -> data/d1_split.json
 ```
+
+**Step 0 is not optional either.** `requirements.txt` carries an
+`--extra-index-url` line for `https://download.pytorch.org/whl/cu128`, because the
+pinned `torch==2.11.0+cu128` does not exist on PyPI's default index. Installing
+without it resolves to the CPU-only wheel and every GPU run in this repo then runs
+on the CPU instead of failing.
+
+**Step 3 is not optional either.** `configs/d1_split.json` is committed but it only
+*pins* the split — it holds the seed, the ratios, the counts and a SHA-256. The
+20,000-entry assignment lives in `data/d1_split.json`, which is gitignored.
+`src/solar_inspect/classification/data.py` recomputes the hash on load and refuses to
+run if it differs, so a clone that skips this step gets a missing-file error rather
+than a quietly different validation set.
 
 **Step 2 is not optional.** D2's published splits are contaminated (see below) and are
 not used by anything in this project. `configs/d2.yaml` points at
