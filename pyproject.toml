@@ -1,0 +1,7 @@
+# Only pytest config. The package is not installed into the venv on purpose:
+# `pip install -e .` writes a machine-specific path into requirements.txt when it
+# is re-frozen, and requirements.txt is committed. `pythonpath` gets tests the
+# same import as an install for none of the cost.
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
