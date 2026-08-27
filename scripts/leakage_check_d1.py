@@ -43,7 +43,8 @@ sys.path.insert(0, str(REPO / "src"))
 
 from solar_inspect.classification.data import load_d1                   # noqa: E402
 from solar_inspect.classification.leakage import class_matched, report  # noqa: E402
-from solar_inspect.classification.train import fit                      # noqa: E402
+from solar_inspect.classification.train import (confusion, fit,          # noqa: E402
+                                                metrics)
 
 NEAR_DUP = REPO / "data" / "d1_near_dup.json"
 THR = 0.98
@@ -116,19 +117,25 @@ def main() -> int:
         accs_l, accs_c, f1s = [], [], []
         for s in SEEDS:
             m, _, _ = fit(cfg | {"seed": s}, d, train_rows=tr, quiet=True)
-            ok = predict(m, d, rows, bs) == labels
+            pred = predict(m, d, rows, bs)
+            ok = pred == labels
             rr = class_matched(ok, labels, leaky, d.classes)
             accs_l.append(rr["acc_leaky"])
             accs_c.append(rr["acc_clean_matched"])
-            f1s.append(float(ok.mean()))
-        out[name] = {"leaky": accs_l, "clean_matched": accs_c, "overall": f1s}
+            f1s.append(metrics(confusion(labels, pred, len(d.classes)))["macro_f1"])
+        out[name] = {"leaky": accs_l, "clean_matched": accs_c, "macro_f1": f1s}
 
-    print(f"\n{'arm':<22}{'leaky acc':>20}{'clean matched':>20}{'leaky - clean':>18}")
+    print(f"\n{'arm':<22}{'leaky acc':>20}{'clean matched':>20}{'leaky - clean':>18}"
+          f"{'val macro-F1':>20}")
     for name, v in out.items():
-        l, c = np.array(v["leaky"]), np.array(v["clean_matched"])
+        l, c, f = (np.array(v[k]) for k in ("leaky", "clean_matched", "macro_f1"))
         print(f"{name:<22}{l.mean():>13.4f} +/-{l.std(ddof=1):.4f}"
               f"{c.mean():>13.4f} +/-{c.std(ddof=1):.4f}"
-              f"{(l - c).mean():>11.4f} +/-{(l - c).std(ddof=1):.4f}")
+              f"{(l - c).mean():>11.4f} +/-{(l - c).std(ddof=1):.4f}"
+              f"{f.mean():>13.4f} +/-{f.std(ddof=1):.4f}")
+    print("The macro-F1 column is the size of the problem: the whole-split cost of the "
+          "leakage is\nbounded by full minus neighbours-removed, and the random-removed "
+          "arm says how much of\nthat is just the smaller training set.")
 
     full, rem = np.array(out["full"]["leaky"]), np.array(out["neighbours-removed"]["leaky"])
     rnd = np.array(out["random-removed"]["leaky"])

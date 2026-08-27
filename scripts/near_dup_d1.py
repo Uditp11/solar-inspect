@@ -167,7 +167,7 @@ def main() -> int:
         v, k = S.max(1)
         best[a:a + CH], arg[a:a + CH] = v, tr[k]
     best_c, arg_c = best.cpu().numpy(), arg.cpu().numpy()
-    sp = np.array([split[p] for p in paths])
+    sp = np.array([split.get(p, "dropped") for p in paths])
 
     print("\n=== D. images with a TRAIN near-neighbour (self excluded) ===")
     print(f"{'split':<7}{'n':>7}" + "".join(f"{t:>14}" for t in COS_THR))
@@ -197,16 +197,25 @@ def main() -> int:
     for cap in DN_CAPS:
         sel = [(i, j) for i, j, m in dn if m <= cap]
         contra = sum(1 for i, j in sel if cls[paths[i]] != cls[paths[j]])
-        cross = sum(1 for i, j in sel if split[paths[i]] != split[paths[j]])
+        cross = sum(1 for i, j in sel if split.get(paths[i], "dropped") != split.get(paths[j], "dropped"))
         bid = sum(1 for i, j in sel if (i, j) in byte_pairs)
         print(f"{cap:>4} DN{len(sel):>8}{contra:>15}{cross:>16}{bid:>16}")
 
-    print("\ncontradictory pairs at <= 4 DN:")
+    # This table is over all 20,000 crops as published, which is the population the
+    # 4 DN threshold was chosen against (ADR 0003). The dropped images are still in
+    # the tensor and still form pairs here; what the dedup guarantees is that no
+    # pair has both members inside a split, which is the line below.
+    survive = [(i, j) for i, j, m in dn
+               if m <= 4 and paths[i] in split and paths[j] in split]
+    print(f"\nof the <= 4 DN pairs, {len(survive)} still have both members in a "
+          "split after configs/d1_dedup.json is applied (0 is the point of it)")
+
+    print("\ncontradictory pairs at <= 4 DN, over the dataset as published:")
     for i, j, m in dn:
         if m <= 4 and cls[paths[i]] != cls[paths[j]]:
             print(f"  max|d| {m}  {Path(paths[i]).name:>10} [{cls[paths[i]]:<14} "
-                  f"{split[paths[i]]:<5}]  {Path(paths[j]).name:>10} "
-                  f"[{cls[paths[j]]:<14} {split[paths[j]]:<5}]")
+                  f"{split.get(paths[i], 'DROP'):<5}]  {Path(paths[j]).name:>10} "
+                  f"[{cls[paths[j]]:<14} {split.get(paths[j], 'DROP'):<5}]")
 
     # ---- F. the D2-analogue null: adjacent by file id ---------------------------
     order = np.argsort(ids)

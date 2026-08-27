@@ -56,6 +56,8 @@ and NumPy primitives. I did not implement autograd, cuDNN kernels, or LAPACK rou
 | MOTA/IDF1 | — | motmetrics | — |
 | ID switches, unique-module error | ✓ | — | hand-computed toy |
 | OLS (normal equations, GD) | ✓ | — | `np.linalg.lstsq`, scikit-learn |
+| D1 duplicate search + components | ✓ | — | SHA-256 byte equality (a subset of it) |
+| Macro-F1, per-class recall | ✓ | — | `sklearn.metrics.f1_score`, every run |
 
 ---
 
@@ -72,16 +74,24 @@ TODO — the full explanation, once the field is actually computed.
 ## Data
 
 See [`docs/DATA.md`](docs/DATA.md) for sources, licences, checksums, formats and the
-oddities found during EDA. No dataset is committed. Reproducing the data is **two steps**:
+oddities found during EDA. No dataset is committed. Reproducing the data:
 
 ```bash
+pip install -r requirements.txt     # 0. torch comes from PyTorch's index, not PyPI
 python scripts/download_data.py     # 1. fetch, checksum and extract all four datasets
 python scripts/split_d2.py          # 2. rebuild D2's split and regenerate configs/d2.yaml
+python scripts/dedup_d1.py          # 3. exclude D1's near-identical crops
+python scripts/split_d1.py          # 4. rebuild D1's split
 ```
 
-**Step 2 is not optional.** D2's published train/val/test splits are contaminated and
-are not used here; `configs/d2.yaml` points at the rebuilt split, which only exists once
-step 2 has run. See [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md).
+**None of them is optional, and 3 comes before 4.** D2's published train/val/test splits
+are contaminated and are not used here; `configs/d2.yaml` points at the rebuilt split,
+which only exists once step 2 has run — see
+[ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md). D1 ships no split at all, and
+splitting it before deduplicating leaves a near-identical pair straddling train and test
+— see [ADR 0003](docs/adr/0003-d1-is-deduplicated-at-4-dn-by-component.md). Step 0 is not
+optional either: without the `--extra-index-url` line in `requirements.txt`, pip resolves
+`torch` to the CPU-only wheel and every GPU run here silently runs on the CPU.
 
 ---
 

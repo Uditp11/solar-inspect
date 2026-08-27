@@ -8,8 +8,14 @@ Everything here was measured on **2026-08-26**. No dataset is committed.
 pip install -r requirements.txt     # 0. torch comes from PyTorch's index, not PyPI
 python scripts/download_data.py     # 1. fetch, checksum and extract all four datasets
 python scripts/split_d2.py          # 2. rebuild D2's split and regenerate configs/d2.yaml
-python scripts/split_d1.py          # 3. rebuild D1's split -> data/d1_split.json
+python scripts/dedup_d1.py          # 3. exclude D1's near-identical crops -> configs/d1_dedup.json
+python scripts/split_d1.py          # 4. rebuild D1's split -> data/d1_split.json
 ```
+
+Two more are measurement-only and change nothing the models read — run them to
+reproduce the D1 duplicate and leakage numbers below, or skip them:
+`scripts/near_dup_d1.py` (needs step 4 first, since it reports leakage per split)
+and `scripts/leakage_check_d1.py`.
 
 **Step 0 is not optional either.** `requirements.txt` carries an
 `--extra-index-url` line for `https://download.pytorch.org/whl/cu128`, because the
@@ -17,9 +23,12 @@ pinned `torch==2.11.0+cu128` does not exist on PyPI's default index. Installing
 without it resolves to the CPU-only wheel and every GPU run in this repo then runs
 on the CPU instead of failing.
 
-**Step 3 is not optional either.** `configs/d1_split.json` is committed but it only
-*pins* the split — it holds the seed, the ratios, the counts and a SHA-256. The
-20,000-entry assignment lives in `data/d1_split.json`, which is gitignored.
+**Steps 3 and 4 are not optional either, and 3 comes before 4.** Splitting first and
+deduplicating afterwards leaves a near-identical pair straddling train and test, which
+is D2's contamination problem in a new costume. `configs/d1_dedup.json` lists the 40
+images excluded and why; `configs/d1_split.json` is committed but only *pins* the split
+— it holds the seed, the ratios, the counts and a SHA-256. The 19,960-entry assignment
+lives in `data/d1_split.json`, which is gitignored.
 `src/solar_inspect/classification/data.py` recomputes the hash on load and refuses to
 run if it differs, so a clone that skips this step gets a missing-file error rather
 than a quietly different validation set.
@@ -75,6 +84,155 @@ costs effectively nothing.
 
 **D1 has no official train/test split.** Any comparison against a published number on
 this dataset is invalid, because it is not the same split. Say so before being asked.
+
+### Duplicates — byte-level hashing is not enough here
+
+Hashing the JPEG bytes finds **22 identical pairs**, and the tempting conclusion is that
+this is a clean dataset and the cheap check settles it. It does not. A JPEG **re-encode**
+of the same crop has different bytes and near-identical pixels, so byte-hashing cannot
+see it by construction. Searching the pixel criterion instead — max |a − b| over the 960
+pixels, exhaustively over all 199,990,000 pairs, not as a subset of a similarity
+shortlist — gives:
+
+| max &#124;a − b&#124; | pairs | contradictory label | straddle a split | byte-identical |
+|---:|---:|---:|---:|---:|
+| 0 DN | 22 | 6 | 10 | 22 |
+| 2 DN | 25 | 9 | 11 | 22 |
+| 4 DN | 30 | 10 | 15 | 22 |
+| 8 DN | 234 | 13 | 111 | 22 |
+| 16 DN | 10,271 | 915 | 4,928 | 22 |
+
+Eight more pairs at 4 DN than byte equality finds, and **four more contradictory ones** —
+three of those pitting No-Anomaly against an anomaly class, two straddling a split
+boundary. `scripts/dedup_d1.py` therefore deduplicates at **≤ 4 DN**, by connected
+component, before the split is drawn:
+[ADR 0003](adr/0003-d1-is-deduplicated-at-4-dn-by-component.md) carries the reasoning for
+the threshold and for the drop rules. **20,000 → 19,960 images**, 13,965 / 2,988 / 3,007.
+
+All 30 components at 4 DN turn out to be **size 2**, so here the pair count and the group
+count coincide. That is a measurement and not an assumption: at 16 DN they would not.
+
+### The measured label-noise floor
+
+Ten of the thirty components carry **two different labels on what is the same image to
+within 4 DN**. Both images are real; which label is right is not knowable from the pixels,
+and the metadata carries nothing else. The whole component is dropped rather than one
+member kept, because keeping one would record a coin flip as ground truth in the split
+every later number is measured against.
+
+| Files | Labels |
+|---|---|
+| `10147.jpg` + `4616.jpg` | Cell-Multi / No-Anomaly |
+| `1124.jpg` + `7387.jpg` | Cracking / Diode |
+| `13046.jpg` + `1594.jpg` | Diode / No-Anomaly |
+| `1448.jpg` + `16999.jpg` | Diode / No-Anomaly |
+| `15571.jpg` + `5687.jpg` | Cell / No-Anomaly |
+| `161.jpg` + `4518.jpg` | Cell-Multi / Offline-Module |
+| `3915.jpg` + `7027.jpg` | Cell-Multi / Cracking |
+| `450.jpg` + `7484.jpg` | Cracking / Offline-Module |
+| `483.jpg` + `6888.jpg` | Hot-Spot / Offline-Module |
+| `5171.jpg` + `543.jpg` | Cell / Offline-Module |
+
+This is a **measured** floor on D1's label noise, not an estimated one, and it is a floor
+in a narrow sense: it says only that at least this much of the labelling is
+self-inconsistent *among crops that are the same image*. It says nothing about how often
+two genuinely different crops are labelled inconsistently, which is the larger and
+unmeasurable quantity. Seven of the ten involve No-Anomaly or Offline-Module.
+
+### Near-duplicate leakage — measured, and live
+
+Deduplicating at 4 DN removes crops that are *the same image*. It says nothing about crops
+that are merely very similar, and there are far more of those. Zero-meaning and
+L2-normalising each crop and taking the cosine over all 199,990,000 pairs:
+
+| | mean | median | p90 | p99 | p99.99 |
+|---|---:|---:|---:|---:|---:|
+| all pairs | 0.4335 | 0.4765 | 0.7405 | 0.8685 | 0.9585 |
+
+**680,604 pairs at ≥ 0.90, 40,438 at ≥ 0.95, 1,350 at ≥ 0.98, 161 at ≥ 0.99.**
+
+Turned into the number that matters — held-out images that have a near neighbour **in
+train** — this is the **leakage ceiling**:
+
+| split | n | ≥ 0.90 | ≥ 0.95 | ≥ 0.98 | ≥ 0.99 |
+|---|---:|---:|---:|---:|---:|
+| val | 2,988 | 76.5% | 36.4% | **4.3%** (129) | 0.7% |
+| test | 3,007 | 78.0% | 36.3% | **4.4%** (133) | 0.5% |
+
+#### Where the similar pairs are, and where they are not
+
+The 1,350 pairs at ≥ 0.98 are not spread across the classes. **916 are
+No-Anomaly ↔ No-Anomaly and 209 are Offline-Module ↔ Offline-Module.** Counting pairs
+whose two members share a class — the only ones that can inflate a class's recall by
+memorisation rather than merely confuse two classes:
+
+| Class | n | within-class pairs ≥ 0.98 |
+|---|---:|---:|
+| No-Anomaly | 10,000 | 916 |
+| Offline-Module | 827 | 209 |
+| Shadowing | 1,056 | 32 |
+| Diode | 1,499 | 14 |
+| Vegetation | 1,639 | 12 |
+| Cell | 1,877 | 4 |
+| Hot-Spot | 249 | 1 |
+| **Cell-Multi, Cracking, Hot-Spot-Multi, Soiling, Diode-Multi** | 940–1,288 / 175–246 | **0** |
+
+The five classes with **zero** within-class near-duplicates are the low-support classes
+macro-F1 actually turns on.
+
+#### It is not consecutive-frame duplication
+
+The obvious mechanism — the same physical module photographed in adjacent frames — does
+not fit. Only **136** of the 1,350 pairs have file ids within 1 of each other; **886 are
+more than 100 apart**. And ordering the whole dataset by file id, adjacent pairs score a
+mean cosine of **0.5162** against the all-pairs **0.4335** — a separation of 1.2×, where
+D2's genuine adjacency effect was 4× (0.127 vs 0.032, ADR 0002). At 40×24, after per-image
+zero-meaning, the dominant component of a crop is its **layout** — a dark rectangle on a
+lighter surround — not its identity. Raw-pixel cosine is a weak identity test on
+near-uniform imagery, which is itself the finding.
+
+#### The leakage is live, and it does not move the headline number
+
+Both halves of that are measured, on the committed split, by
+`scripts/leakage_check_d1.py`.
+
+**It is live.** Scoring the baseline on the 129 leaky val images against the clean 2,859
+*reweighted to the leaky class mix* — matching on class, because the leaky subset is
+80% No-Anomaly and 14% Offline-Module and a raw comparison would be meaningless —
+gives **0.9535 against 0.8484, a difference of +0.105 ± 0.021 (z = +5.09)**.
+
+Class-matching is not enough on its own: a ≥ 0.98 threshold preferentially selects the
+most prototypical crop of a class, and prototypical crops are easier for any model,
+including one that has never seen them. So the mechanism was tested directly. Retraining
+with the 232 train images that are ≥ 0.98 neighbours of those 129 deleted, three seeds
+per arm, against a control that deletes the **same number of random images of the same
+classes**:
+
+| arm | leaky-val accuracy | leaky − clean-matched | val macro-F1 |
+|---|---:|---:|---:|
+| full train (13,965) | 0.9509 ± 0.0045 | +0.0837 ± 0.0260 | 0.5686 ± 0.0116 |
+| neighbours removed (13,733) | **0.9018 ± 0.0161** | +0.0292 ± 0.0041 | 0.5636 ± 0.0187 |
+| random removed (13,733) | 0.9509 ± 0.0090 | +0.0779 ± 0.0092 | 0.5754 ± 0.0191 |
+
+Removing the neighbours costs **4.9 points** on those images. Removing the same number of
+random same-class images costs **0.0**. The advantage is caused by the near-duplicates in
+train, not by the images being easy and not by the smaller training set.
+
+**And it does not move the headline number.** The whole-split cost is
+0.5686 − 0.5636 = **0.005 macro-F1**, against a seed-to-seed standard deviation of
+0.012–0.019 on the same arms. By this project's own rule that a difference inside the
+noise floor is not a result, the leakage is **not measurable on val macro-F1 at this
+budget** — it is a real effect on 4.3% of the split that does not survive being diluted
+across the other 95.7%.
+
+**Both sentences are needed.** "There is near-duplicate leakage in D1" and "it is worth
+0.005 macro-F1" are different claims, and only the second one bounds what it costs.
+
+**Open:** whether to act on this — by grouping the ≥ 0.98 components into single splits,
+by dropping them, or by leaving the split alone and publishing the bound — is not decided
+and has no ADR yet. What is decided is that the earlier reasoning for leaving it alone,
+which rested on the leakage being inert, is **wrong**: it was inferred, then measured, and
+the measurement contradicted it. The same failure ADR 0002 exists to record.
 
 ---
 
