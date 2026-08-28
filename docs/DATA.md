@@ -229,6 +229,11 @@ Removing the neighbours costs **4.9 points** on those images. Removing the same 
 random same-class images costs **0.0**. The advantage is caused by the near-duplicates in
 train, not by the images being easy and not by the smaller training set.
 
+**All three arms are the 116k-parameter from-scratch CNN, so this bound overstates the
+effect on the shipped fine-tuned ResNet-18**, which shows about a third of the leaky
+advantage on the same val images and +0.020 ± 0.026 (z = 0.79) on test — see the
+model-to-model comparison below. It is the conservative figure, not the shipped one.
+
 **And it does not move the headline number.** The whole-split cost is
 0.5686 − 0.5636 = **0.005 macro-F1**, against a seed-to-seed standard deviation of
 0.012–0.019 on the same arms. By this project's own rule that a difference inside the

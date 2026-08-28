@@ -32,10 +32,21 @@ DECISION 2 -- ONE CHANNEL INTO A THREE-CHANNEL conv1. The stem is
 Conv2d(3, 64, 7). The two standard fixes are to replicate the grey channel three
 times, or to sum conv1's weights across the input channel.
 
-**They are the same function at initialisation, and it is worth being precise
-about that** rather than treating it as a real fork. Feeding x replicated three
-times gives sum_c W[:, c] * x, which is exactly the 1-channel convolution whose
-weight is sum_c W[:, c]. Identical output, to floating point.
+**They are the same function at initialisation -- but only under a single shared
+normalisation** -- and it is worth being precise about that rather than treating
+it as a real fork. Feeding x replicated three times gives sum_c W[:, c] * x, which
+is exactly the 1-channel convolution whose weight is sum_c W[:, c]. Identical
+output, to floating point.
+
+The condition is doing real work and is not a technicality. The step above needs
+all three input channels to carry the same number. Normalise per-channel with
+ImageNet's (0.485/0.456/0.406, 0.229/0.224/0.225) and they do not: the channels
+become x_1, x_2, x_3, sum_c W[:, c] * x_c is not sum_c W[:, c] * x, and the
+equivalence is false. This model normalises with D1's own train-split mean and std
+-- one constant on the one real channel, the same statistics data.py computes for
+every other model in this project -- so the condition holds here. The self-check
+below feeds the reference stem `up.repeat(1, 3, 1, 1)`, i.e. identical channels,
+so it tests exactly the case the claim is made about.
 
 They differ in three ways that only show up later:
 

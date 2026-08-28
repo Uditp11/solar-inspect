@@ -40,6 +40,15 @@ the evidence**, and it is what makes this a finding rather than an observation: 
 out both "the leaky images are just easy" and "the smaller training set did it". Without
 that arm the 4.9 points would have been ambiguous between three explanations.
 
+**Every arm above is the 116k-parameter from-scratch CNN, so this bound overstates the
+effect on the shipped model.** The removal experiment was run on the small CNN and not
+repeated on the fine-tuned ResNet-18 that produces the headline number; on the same val
+images the ResNet shows roughly a third of the leaky advantage, and on test the
+class-matched difference is +0.020 ± 0.026 (z = 0.79). See the correction at the end of
+this ADR, which is where that was measured. The 4.9 points is therefore the conservative
+figure rather than the shipped one — the direction an honest bound should err in, but it
+should not be quoted as if it described the ResNet.
+
 **2. It does not move the headline number.** The whole-split cost is
 0.5686 − 0.5636 = **0.005 macro-F1**, against a seed-to-seed standard deviation of
 **0.012–0.019** on the same arms. By this project's own rule — a difference inside the
