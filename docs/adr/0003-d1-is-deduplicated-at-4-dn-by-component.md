@@ -90,7 +90,7 @@ That is D2's contamination in a new costume, and it fails invisibly.
   filename and label in `docs/DATA.md`. This is a floor observed in the data, not an
   estimate: it says only that at least this much of D1's labelling is
   self-inconsistent among crops that are the same image to within 4 DN.
-- **Every number measured before `6f197e6` is on a different dataset.**
+- **Every number measured before `4b65b1d` is on a different dataset.**
   `docs/EXPERIMENTS.md` gained a `split` column, retrofitted onto the existing rows,
   so a pre-dedup and a post-dedup run cannot be compared by accident.
 - **D1 numbers were already not comparable to published ones** — the dataset ships no

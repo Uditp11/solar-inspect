@@ -45,7 +45,7 @@ and reported with the size of the split it was measured on.
 
 The test number comes from one evaluation, of a config
 ([`configs/cls_final.yaml`](configs/cls_final.yaml)) committed and pushed in
-[`c1df507`](../../commit/c1df507) **before** the split was read;
+[`1a0fdfa`](../../commit/1a0fdfa) **before** the split was read;
 [`scripts/eval_test_d1.py`](scripts/eval_test_d1.py) refuses to run otherwise. Per-class
 recall with supports, the confusion matrix and the full ablation are in
 [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md). **D1 ships no official split, so none of these

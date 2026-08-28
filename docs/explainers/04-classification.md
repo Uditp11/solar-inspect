@@ -4,7 +4,7 @@ Module 4 of the pipeline. Twelve-class defect classification on D1, plus the
 transfer-learning baseline and the distillation experiment built on it.
 
 Every number here traces to `docs/EXPERIMENTS.md` and a commit. The test split was
-read once, at config commit `c1df507`, and is not read again.
+read once, at config commit `1a0fdfa`, and is not read again.
 
 ---
 
@@ -188,7 +188,7 @@ were compared: plain cross-entropy, inverse-frequency class weights, focal loss 
 **The threshold was written down before the first arm ran.** From three earlier
 control arms on this split, the seed-to-seed standard deviation of val macro-F1 is
 0.012–0.019, so `configs/cls_ablation.yaml` and `docs/EXPERIMENTS.md` both declare,
-at commit `f3d71fd`: *any two arms differing by less than 0.02 macro-F1 are
+at commit `93af4b5`: *any two arms differing by less than 0.02 macro-F1 are
 indistinguishable and are not ranked.*
 
 | arm | val macro-F1, mean ± std |

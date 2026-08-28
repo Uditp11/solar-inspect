@@ -8,8 +8,8 @@
 # ---------------------------------------------------------------------------
 # WHY THIS MODEL
 # ---------------------------------------------------------------------------
-# Selected on **val**, from the runs logged in docs/EXPERIMENTS.md at 78b2f52
-# and 0d15ffe, all on split `af8781b1`:
+# Selected on **val**, from the runs logged in docs/EXPERIMENTS.md at 5270a7e
+# and d4100d6, all on split `af8781b1`:
 #
 #   resnet18 (this config)   0.6770 +/- 0.0074
 #   baseline, plain CE       0.5980 +/- 0.0085

@@ -2,7 +2,7 @@
 #
 #     python scripts/distill_d1.py
 #
-# Evaluated on **val**. The test split was spent once at c1df507 and is not read
+# Evaluated on **val**. The test split was spent once at 1a0fdfa and is not read
 # again, so the three rows of the KD table are val numbers and say so.
 #
 # ---------------------------------------------------------------------------

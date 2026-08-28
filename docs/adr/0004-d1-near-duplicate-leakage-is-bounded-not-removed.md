@@ -130,7 +130,7 @@ not.
   memorise could turn 0.005 into something larger.~~ The 4.9-point subgroup effect is the
   part that generalises; the 0.005 is not a property of the dataset.
 
-  **Correction, 2026-08-27, after the test evaluation at `c1df507`.** The struck sentence
+  **Correction, 2026-08-27, after the test evaluation at `1a0fdfa`.** The struck sentence
   was a guess and it was wrong in direction. Measured on the *same* val images, swapping
   the 116k-parameter CNN for the fine-tuned ResNet-18 takes the class-matched leaky
   advantage from **+0.105 (z = +5.09) to +0.033 (z = +1.80)**; on test the same ResNet-18
