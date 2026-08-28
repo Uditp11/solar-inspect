@@ -151,6 +151,16 @@ same-class images* costs **0.0000**. The exact zero in that control is what
 separates "the model has seen these" from "these images are easy". Diluted across
 the whole split the effect is 0.005 macro-F1, inside a seed spread of 0.012–0.019,
 so it is not measurable on the headline number.
+
+**This bound was measured on the 116k-parameter from-scratch CNN, and it overstates
+the effect on the model that actually ships.** Both figures — the 4.9-point subgroup
+cost and the 0.005 whole-split cost — come from the small CNN's removal experiment.
+Measured on the same val images, the fine-tuned ResNet-18 shows about a third of the
+small CNN's leaky advantage (+0.033, z = 1.80, against +0.105, z = 5.09), and on test
+its class-matched leaky-minus-clean difference is +0.020 ± 0.026, z = 0.79. A stronger
+model has less headroom left for a memorised near-duplicate to occupy. So 4.9 points is
+the conservative number, not the shipped one, and it is quoted because a bound that
+overstates the problem is the right way round for a bound to be wrong.
 [ADR 0004](../adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
 
 The rule across all three, in one sentence: **exact and near-exact duplicates are
@@ -202,9 +212,23 @@ Applying the declared rule, four of the six pairwise comparisons are
 indistinguishable. The two that resolve both say a treatment **lost**: baseline
 beats class weights by 0.0364, and focal beats class weights by 0.0240.
 
-**None of the three imbalance treatments beats plain cross-entropy.** Baseline has
-the highest mean and is not thereby the winner — it sits inside the floor of both
-focal and resampling.
+**None of the three imbalance treatments beats plain cross-entropy at a learning
+rate held fixed across all arms and tuned for none of them.** Baseline has the
+highest mean and is not thereby the winner — it sits inside the floor of both focal
+and resampling. The learning-rate qualification belongs in the sentence rather than
+in a limitations paragraph below it, because the treatments being compared change
+the effective gradient scale and a fixed LR is therefore not neutral between them.
+
+**What would have flipped under the observed spread.** The measured per-arm std came
+in at 0.004–0.009, tighter than the 0.012–0.019 the 0.02 floor was built from. A floor
+re-derived from the tighter spread the same way lands near 0.010–0.015, and at that
+threshold both comparisons this finding rests on resolve in baseline's favour:
+`baseline − resampling` at +0.0175 under either end of the range, `baseline − focal`
+at +0.0125 under the lower end. That would have licensed the stronger claim that plain
+cross-entropy beat two of the three. **The floor declared before the first arm ran was
+kept, and the weaker claim is the one reported** — a threshold re-derived from the
+numbers it is about to judge is not a threshold, and this one would have moved in the
+direction that flattered the result.
 
 The ordering is not a total order, and that is correct rather than a defect:
 baseline beats class weights, resampling does not, and baseline does not beat
@@ -248,15 +272,26 @@ filters respond hardest. Not ablated; picked and stated.
 
 **One channel into a three-channel stem.** The two standard fixes are to replicate
 the grey channel three times or to sum conv1's weights across the input channel,
-and they are **the same function at initialisation** — feeding *x* replicated three
-times computes Σ*c* W[:, c] · x, which is exactly the 1-channel convolution whose
-weight is that sum. The module's self-check verifies it to 10⁻⁶ rather than
-asserting it. They diverge later in three ways: replication keeps 9,408 weights in
-conv1 where 3,136 suffice, and the extra 6,272 are three copies of one filter free
-to drift apart while fine-tuning on 13,965 images; replication invites ImageNet's
-three per-channel normalisation constants onto three copies of the same number; and
-summing ties the three filters together for the rest of training. *Taken:* sum the
-weights, and use D1's own train-split mean and std.
+and they are **the same function at initialisation — but only under a single shared
+normalisation**, which is the condition that makes the claim true and is worth
+stating rather than leaving implicit. Feeding *x* replicated three times computes
+Σ*c* W[:, c] · x, which is exactly the 1-channel convolution whose weight is that
+sum; the step that gets you there is that all three input channels carry the same
+number. **Normalise per-channel with ImageNet's three constants and they no longer
+do — the three channels become three different values, `sum_c W[:, c] * x_c` is not
+`sum_c W[:, c] * x`, and the equivalence is simply false.** This project normalises with
+D1's own train-split mean and std, one constant applied to the one real channel, the
+same statistics `data.py` computes for every other model here — so the condition
+holds and the claim stands. The module's self-check verifies it to 10⁻⁶ rather than
+asserting it, and it feeds the reference stem a replicated tensor, so what it checks
+is exactly the identical-channel case.
+
+Given that condition, the two choices still diverge later in three ways: replication
+keeps 9,408 weights in conv1 where 3,136 suffice, and the extra 6,272 are three copies
+of one filter free to drift apart while fine-tuning on 13,965 images; replication is
+what invites those ImageNet per-channel constants in the first place; and summing ties
+the three filters together for the rest of training. *Taken:* sum the weights, and use
+D1's own train-split mean and std.
 
 ### Calibration
 

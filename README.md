@@ -34,11 +34,11 @@ and reported with the size of the split it was measured on.
 | 3 · Tracking | D5 (synthetic) | MOTA / IDF1 / IDSW | TODO | TODO |
 | 3 · Deduplication | D5 (synthetic) | N frames → M detections → K unique | TODO | TODO |
 | 4 · Classification | D1 | macro-F1, ResNet-18 fine-tuned | **0.6956** | 3,007 imgs (test, once) |
-| 4 · Classification | D1 | accuracy vs null model | 0.8251 vs 0.4988 | 3,007 imgs (test, once) |
+| 4 · Classification | D1 | accuracy vs null model, ResNet-18 fine-tuned | 0.8251 vs 0.4988 | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | best from-scratch CNN, macro-F1 | 0.5980 ± 0.0085 | 2,988 imgs (val, 3 seeds) |
-| 4 · Classification | D1 | triage precision @ 2.2% prevalence | 0.502 at recall 0.896 | 3,007 imgs (test, once) |
-| 4 · Classification | D1 | ECE, global / class-balanced (T-scaled) | 0.021 / 0.184 | 3,007 imgs (test, once) |
-| 4 · Distillation | D1 | teacher / student / distilled macro-F1 | 0.6735 / 0.5980 ± 0.0085 / 0.5987 ± 0.0075 | 2,988 imgs (val) |
+| 4 · Classification | D1 | triage precision @ 2.2% prevalence, ResNet-18 fine-tuned | 0.502 at recall 0.896 | 3,007 imgs (test, once) |
+| 4 · Classification | D1 | ECE, global / class-balanced (T-scaled), ResNet-18 fine-tuned | 0.021 / 0.184 | 3,007 imgs (test, once) |
+| 4 · Distillation | D1 | teacher ResNet-18 / student from-scratch CNN / distilled macro-F1 | 0.6735 / 0.5980 ± 0.0085 / 0.5987 ± 0.0075 | 2,988 imgs (val) |
 | 4 · Distillation | D1 | params, teacher vs student | 11,176,396 vs 115,948 (96×) | — |
 | 4 · Distillation | D1 | CPU latency, batch 64, 1 thread | 706.1 ms vs 228.7 ms (3.1×) | — |
 | 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |

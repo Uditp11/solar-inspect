@@ -68,7 +68,8 @@ Against the **0.02 declared above**, only two of the six pairs separate:
 | focal − resampling | +0.0051 | **indistinguishable** |
 
 **The result is that none of the three imbalance treatments beats plain
-cross-entropy, and class weighting is measurably worse than two of the arms.**
+cross-entropy at a learning rate held fixed across arms and tuned for none of
+them, and class weighting is measurably worse than two of the arms.**
 The three arms that are supposed to help either did not, or did not by enough to
 see at this budget. That is the finding. `baseline` has the highest mean and is
 **not** thereby the winner: it is inside the floor of both focal and resampling.
@@ -87,7 +88,21 @@ was declared for these runs; a threshold re-derived from the numbers it is about
 to judge is not a threshold. What the tighter spread means is that cosine decay
 plus best-epoch selection stabilised the runs relative to the constant-LR control
 arms, and a *future* ablation on this budget could pre-declare something nearer
-0.015. It does not license reopening `baseline − focal` at +0.0125.
+0.010–0.015.
+
+**Which calls would flip, stated rather than left for a reader to work out.** A
+floor re-derived from the observed 0.004–0.009 spread the way the declared one was
+derived from 0.012–0.019 lands somewhere around 0.010–0.015, and at that threshold
+the two comparisons the headline finding rests on both resolve: `baseline −
+resampling` at **+0.0175** flips under either end of that range, and `baseline −
+focal` at **+0.0125** flips under the lower end. Both would resolve in baseline's
+favour, which would turn "no treatment beat plain cross-entropy" into "plain
+cross-entropy beat two of the three" — a stronger claim than the one made here.
+(`class weights − resampling` at −0.0189 would also resolve, but it says nothing
+about the headline finding.) **The pre-declared 0.02 floor was kept anyway and the
+weaker claim is the one that ships**, because a floor moved after seeing the
+numbers it judges is not a floor, and the direction it would move in here happens
+to favour the result.
 
 ### Where the treatments did act: the four smallest val classes
 
