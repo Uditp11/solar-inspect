@@ -1,11 +1,17 @@
 # Experiments
 
+**The history was rewritten on 2026-08-28 to remove automated co-author trailers from
+commit messages. Every SHA recorded here before that date was remapped to its new commit;
+trees, author dates and committer dates are unchanged, so the runs themselves are the same
+runs. A ledger that silently changed its own primary keys would be worse than one that
+says it did.**
+
 Every training run, in order. A run with `dirty=yes` was made against a
 working tree that did not match its commit, so its numbers are not
 reproducible from that SHA -- treat them as indicative only.
 
 **`split` is the first 8 hex of `configs/d1_split.json`'s sha256.** D1 was
-deduplicated and re-split at `6f197e6`, so a row on `4cbb0c3d` and a row on
+deduplicated and re-split at `4b65b1d`, so a row on `4cbb0c3d` and a row on
 `af8781b1` are numbers on two different datasets and comparing them is a
 mistake with no visible symptom. The column exists to make that impossible to
 do by accident.
@@ -41,7 +47,7 @@ uses is four chances to overfit it, and the val numbers here should be read as
 optimistic by an unmeasured amount. Said here rather than left for a reader to
 notice.
 
-## Ablation result — three seeds per arm, val, split `af8781b1`, run at `f3d71fd`
+## Ablation result — three seeds per arm, val, split `af8781b1`, run at `93af4b5`
 
 | arm | val macro-F1, mean ± std | seeds | selected epochs | val accuracy |
 |---|---:|---|---|---:|
@@ -111,7 +117,7 @@ That gap is about one noise floor wide and is a change in the *stopping rule*,
 not in the model — which is exactly why the budget was fixed identically across
 arms before any arm ran.
 
-## Transfer-learning baseline — ImageNet ResNet-18, val, run at `0d15ffe`
+## Transfer-learning baseline — ImageNet ResNet-18, val, run at `d4100d6`
 
 | arm | val macro-F1, mean ± std | seeds | selected epochs | val accuracy | params |
 |---|---:|---|---|---:|---:|
@@ -134,7 +140,7 @@ fine-tuning default and not swept.
 
 ## THE TEST EVALUATION — once, and not again
 
-**Config commit: [`c1df507`](../../../commit/c1df507).** `configs/cls_final.yaml`
+**Config commit: [`1a0fdfa`](../../../commit/1a0fdfa).** `configs/cls_final.yaml`
 was committed and pushed to `origin/main` before `scripts/eval_test_d1.py` read
 the test split, and the script refuses to run otherwise — it checks that the file
 is tracked, unmodified, and an ancestor of `origin/main`, and prints the SHA it
@@ -340,7 +346,7 @@ it has are different problems, and only the first one is answered at 2.2%.
 ## Distillation — three rows, on val, and the KD gain is nothing
 
 Teacher is the exact seed-0 ResNet-18 behind the test number (config commit
-`c1df507`). Both student arms are trained by the same `fit()` in the same script
+`1a0fdfa`). Both student arms are trained by the same `fit()` in the same script
 on the same three seeds at the same 30-epoch cosine budget, differing in one
 config key. `configs/cls_kd.yaml` and α = 0.5, T = 4.0, declared before the run
 and not swept.
@@ -427,29 +433,29 @@ The `config` column carries `path#arm` for a config that declares several arms.
 
 | run | git SHA | dirty | split | config | seed | eval split | epochs | wall | macro-F1 | acc | null acc |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 20260827T134744Z | `6f1f6fe` | yes | `4cbb0c3d` | `configs/cls_baseline.yaml` | 0 | val | 30 | 14 s | **0.5907** | 0.7783 | 0.5008 |
-| 20260827T135123Z | `6bc2d76` | no | `4cbb0c3d` | `configs/cls_baseline.yaml` | 0 | val | 30 | 14 s | **0.5907** | 0.7783 | 0.5008 |
-| 20260827T191639Z | `427111e` | no | `af8781b1` | `configs/cls_baseline.yaml` | 0 | val | 30 | 23 s | **0.5799** | 0.7567 | 0.5013 |
-| 20260827T203538Z | `133c67b` | no | `af8781b1` | `configs/cls_baseline.yaml` | 0 | val | 30 | 23 s | **0.5799** | 0.7567 | 0.5013 |
-| 20260827T203719Z_baseline_s0 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#baseline` | 0 | val | 30 | 23 s | **0.6067** | 0.7892 | 0.5013 |
-| 20260827T203719Z_baseline_s1 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#baseline` | 1 | val | 30 | 22 s | **0.5897** | 0.7811 | 0.5013 |
-| 20260827T203719Z_baseline_s2 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#baseline` | 2 | val | 30 | 22 s | **0.5975** | 0.7815 | 0.5013 |
-| 20260827T203719Z_class-weights_s0 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#class-weights` | 0 | val | 30 | 22 s | **0.5541** | 0.7222 | 0.5013 |
-| 20260827T203719Z_class-weights_s1 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#class-weights` | 1 | val | 30 | 22 s | **0.5660** | 0.7239 | 0.5013 |
-| 20260827T203719Z_class-weights_s2 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#class-weights` | 2 | val | 30 | 21 s | **0.5645** | 0.7249 | 0.5013 |
-| 20260827T203719Z_focal_s0 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#focal` | 0 | val | 30 | 26 s | **0.5906** | 0.7808 | 0.5013 |
-| 20260827T203719Z_focal_s1 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#focal` | 1 | val | 30 | 26 s | **0.5841** | 0.7687 | 0.5013 |
-| 20260827T203719Z_focal_s2 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#focal` | 2 | val | 30 | 25 s | **0.5818** | 0.7771 | 0.5013 |
-| 20260827T203719Z_resampling_s0 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#resampling` | 0 | val | 30 | 22 s | **0.5849** | 0.7537 | 0.5013 |
-| 20260827T203719Z_resampling_s1 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#resampling` | 1 | val | 30 | 22 s | **0.5775** | 0.7490 | 0.5013 |
-| 20260827T203719Z_resampling_s2 | `f3d71fd` | no | `af8781b1` | `configs/cls_ablation.yaml#resampling` | 2 | val | 30 | 21 s | **0.5789** | 0.7537 | 0.5013 |
-| 20260827T204537Z_resnet18_s0 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 0 | val | 30 | 163 s | **0.6735** | 0.8310 | 0.5013 |
-| 20260827T204537Z_resnet18_s1 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 1 | val | 30 | 162 s | **0.6855** | 0.8330 | 0.5013 |
-| 20260827T204537Z_resnet18_s2 | `0d15ffe` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 2 | val | 30 | 161 s | **0.6719** | 0.8333 | 0.5013 |
-| 20260827T205903Z | `c1df507` | no | `af8781b1` | `configs/cls_final.yaml` | 0 | test | 30 | 164 s | **0.6956** | 0.8251 | 0.4988 |
-| 20260827T210715Z_student-from-scratch_s0 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 0 | val | 30 | 22 s | **0.6067** | 0.7892 | 0.5013 |
-| 20260827T210715Z_student-from-scratch_s1 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 1 | val | 30 | 22 s | **0.5897** | 0.7811 | 0.5013 |
-| 20260827T210715Z_student-from-scratch_s2 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 2 | val | 30 | 21 s | **0.5975** | 0.7815 | 0.5013 |
-| 20260827T210715Z_student-distilled_s0 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 0 | val | 30 | 26 s | **0.6036** | 0.7888 | 0.5013 |
-| 20260827T210715Z_student-distilled_s1 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 1 | val | 30 | 26 s | **0.5901** | 0.7821 | 0.5013 |
-| 20260827T210715Z_student-distilled_s2 | `19c63b5` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 2 | val | 30 | 26 s | **0.6023** | 0.7744 | 0.5013 |
+| 20260827T134744Z | `1b931b0` | yes | `4cbb0c3d` | `configs/cls_baseline.yaml` | 0 | val | 30 | 14 s | **0.5907** | 0.7783 | 0.5008 |
+| 20260827T135123Z | `4ff1b1e` | no | `4cbb0c3d` | `configs/cls_baseline.yaml` | 0 | val | 30 | 14 s | **0.5907** | 0.7783 | 0.5008 |
+| 20260827T191639Z | `9e2c96f` | no | `af8781b1` | `configs/cls_baseline.yaml` | 0 | val | 30 | 23 s | **0.5799** | 0.7567 | 0.5013 |
+| 20260827T203538Z | `ba365e4` | no | `af8781b1` | `configs/cls_baseline.yaml` | 0 | val | 30 | 23 s | **0.5799** | 0.7567 | 0.5013 |
+| 20260827T203719Z_baseline_s0 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#baseline` | 0 | val | 30 | 23 s | **0.6067** | 0.7892 | 0.5013 |
+| 20260827T203719Z_baseline_s1 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#baseline` | 1 | val | 30 | 22 s | **0.5897** | 0.7811 | 0.5013 |
+| 20260827T203719Z_baseline_s2 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#baseline` | 2 | val | 30 | 22 s | **0.5975** | 0.7815 | 0.5013 |
+| 20260827T203719Z_class-weights_s0 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#class-weights` | 0 | val | 30 | 22 s | **0.5541** | 0.7222 | 0.5013 |
+| 20260827T203719Z_class-weights_s1 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#class-weights` | 1 | val | 30 | 22 s | **0.5660** | 0.7239 | 0.5013 |
+| 20260827T203719Z_class-weights_s2 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#class-weights` | 2 | val | 30 | 21 s | **0.5645** | 0.7249 | 0.5013 |
+| 20260827T203719Z_focal_s0 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#focal` | 0 | val | 30 | 26 s | **0.5906** | 0.7808 | 0.5013 |
+| 20260827T203719Z_focal_s1 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#focal` | 1 | val | 30 | 26 s | **0.5841** | 0.7687 | 0.5013 |
+| 20260827T203719Z_focal_s2 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#focal` | 2 | val | 30 | 25 s | **0.5818** | 0.7771 | 0.5013 |
+| 20260827T203719Z_resampling_s0 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#resampling` | 0 | val | 30 | 22 s | **0.5849** | 0.7537 | 0.5013 |
+| 20260827T203719Z_resampling_s1 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#resampling` | 1 | val | 30 | 22 s | **0.5775** | 0.7490 | 0.5013 |
+| 20260827T203719Z_resampling_s2 | `93af4b5` | no | `af8781b1` | `configs/cls_ablation.yaml#resampling` | 2 | val | 30 | 21 s | **0.5789** | 0.7537 | 0.5013 |
+| 20260827T204537Z_resnet18_s0 | `d4100d6` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 0 | val | 30 | 163 s | **0.6735** | 0.8310 | 0.5013 |
+| 20260827T204537Z_resnet18_s1 | `d4100d6` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 1 | val | 30 | 162 s | **0.6855** | 0.8330 | 0.5013 |
+| 20260827T204537Z_resnet18_s2 | `d4100d6` | no | `af8781b1` | `configs/cls_resnet18.yaml#resnet18` | 2 | val | 30 | 161 s | **0.6719** | 0.8333 | 0.5013 |
+| 20260827T205903Z | `1a0fdfa` | no | `af8781b1` | `configs/cls_final.yaml` | 0 | test | 30 | 164 s | **0.6956** | 0.8251 | 0.4988 |
+| 20260827T210715Z_student-from-scratch_s0 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 0 | val | 30 | 22 s | **0.6067** | 0.7892 | 0.5013 |
+| 20260827T210715Z_student-from-scratch_s1 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 1 | val | 30 | 22 s | **0.5897** | 0.7811 | 0.5013 |
+| 20260827T210715Z_student-from-scratch_s2 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-from-scratch` | 2 | val | 30 | 21 s | **0.5975** | 0.7815 | 0.5013 |
+| 20260827T210715Z_student-distilled_s0 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 0 | val | 30 | 26 s | **0.6036** | 0.7888 | 0.5013 |
+| 20260827T210715Z_student-distilled_s1 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 1 | val | 30 | 26 s | **0.5901** | 0.7821 | 0.5013 |
+| 20260827T210715Z_student-distilled_s2 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 2 | val | 30 | 26 s | **0.6023** | 0.7744 | 0.5013 |

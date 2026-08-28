@@ -285,7 +285,7 @@ define a set of duplicates.
 #### And on test, from the single test evaluation, it is smaller still
 
 The equivalent class-matched breakdown on **test** comes from the per-image predictions of
-the one test pass (`c1df507`, run `20260827T205903Z`), not from a second evaluation.
+the one test pass (`1a0fdfa`, run `20260827T205903Z`), not from a second evaluation.
 
 | | model | n leaky / clean | leaky acc | clean, class-matched | difference | z |
 |---|---|---:|---:|---:|---:|---:|
