@@ -1,47 +1,31 @@
-# PV Inspection Pipeline — Thermal Defect Detection, Tracking and Analytics
+# PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status: in progress.** Every `TODO` below is a number that has not been measured yet.
-> Nothing in this file is a claim until it points at a committed run.
+> **Status (18 Oct 2026): in progress.** Module 4 (classification) is finished.
+> Segmentation, detection, tracking and analytics are not built yet.
 
-Four perception modules trained and benchmarked independently on public solar imagery,
+The plan is four perception modules trained and benchmarked independently on public solar imagery,
 sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
-Metric primitives are written from scratch and unit-tested; production models are fine-tuned
-from libraries. The seam between the two is stated below and nowhere contradicted.
+Metric primitives are written from scratch and unit-tested; the main models are fine-tuned
+from libraries. The seam between the two is stated below.
 
 ---
 
-## Scope — what this is and what it is not
+## Results: module 4, classification
 
-TODO — written last, describing only what actually ran.
-
-**It is not:** TODO
-
----
-
-## Results
-
-One row per module. Every number re-measured against its output file before shipping,
-and reported with the size of the split it was measured on.
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) with the
+commit, config and split it came from, and is reported with the size of the split it was
+measured on.
 
 | Module | Data | Metric | Value | Split size |
 |---|---|---|---|---|
-| 1 · Segmentation (site footprint) | D3 PV01 | IoU / Dice, **per subset** | TODO | TODO |
-| 1 · Naive colour-threshold baseline | D3 PV01 | IoU / Dice, **per subset** | TODO | TODO |
-| 2 · Detection | D2 | mAP@0.5 (mine) | TODO | 63 imgs / 3,984 boxes |
-| 2 · Detection | D2 | mAP@0.5 (torchmetrics) | TODO | 63 imgs / 3,984 boxes |
-| 2 · Detection | D2 | mAP@0.5:0.95 (torchmetrics) | TODO | 63 imgs / 3,984 boxes |
-| 2 · Detection | D2 | per-image panel-count error | TODO | 63 imgs / 3,984 boxes |
-| 3 · Tracking | D5 (synthetic) | MOTA / IDF1 / IDSW | TODO | TODO |
-| 3 · Deduplication | D5 (synthetic) | N frames → M detections → K unique | TODO | TODO |
 | 4 · Classification | D1 | macro-F1, ResNet-18 fine-tuned | **0.6956** | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | accuracy vs null model, ResNet-18 fine-tuned | 0.8251 vs 0.4988 | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | best from-scratch CNN, macro-F1 | 0.5980 ± 0.0085 | 2,988 imgs (val, 3 seeds) |
 | 4 · Classification | D1 | triage precision @ 2.2% prevalence, ResNet-18 fine-tuned | 0.502 at recall 0.896 | 3,007 imgs (test, once) |
 | 4 · Classification | D1 | ECE, global / class-balanced (T-scaled), ResNet-18 fine-tuned | 0.021 / 0.184 | 3,007 imgs (test, once) |
 | 4 · Distillation | D1 | teacher ResNet-18 / student from-scratch CNN / distilled macro-F1 | 0.6735 / 0.5980 ± 0.0085 / 0.5987 ± 0.0075 | 2,988 imgs (val) |
-| 4 · Distillation | D1 | params, teacher vs student | 11,176,396 vs 115,948 (96×) | — |
-| 4 · Distillation | D1 | CPU latency, batch 64, 1 thread | 706.1 ms vs 228.7 ms (3.1×) | — |
-| 5 · Analytics | D4 | per-inverter slope ranking | TODO | TODO |
+| 4 · Distillation | D1 | params, teacher vs student | 11,176,396 vs 115,948 (96×) | n/a |
+| 4 · Distillation | D1 | CPU latency, batch 64, 1 thread | 706.1 ms vs 228.7 ms (3.1×) | n/a |
 
 The test number comes from one evaluation, of a config
 ([`configs/cls_final.yaml`](configs/cls_final.yaml)) committed and pushed in
@@ -53,17 +37,40 @@ numbers is comparable to a published one.**
 
 **The classification rows carry a measured leakage bound, and it belongs here rather than
 in a footnote.** Val and test each contain ~4% of images with a ≥ 0.98 cosine neighbour in
-train (129 of 2,988 and 133 of 3,007). A controlled experiment — remove the 232 train
-neighbours, retrain, 3 seeds, against a control removing the *same number of random
-same-class images* — shows the effect is causal: leaky-subset accuracy falls **4.9 points**
-under neighbour removal and **0.0000** under the random control. Diluted across the full
-split the effect is **0.005 macro-F1**, inside a seed spread of 0.012–0.019, so it is not
-measurable on the headline number at this budget. On the test split, for the model above,
-the class-matched leaky-minus-clean difference is **+0.020 ± 0.026 (z = 0.79)** — smaller
-than on the small CNN, because a better model has less headroom left to gain. Exact and
-near-exact duplicates were removed; statistical near-neighbours were measured and bounded
-rather than removed. See
+train (129 of 2,988 and 133 of 3,007). A controlled experiment shows the effect is causal:
+remove the 232 train neighbours, retrain over 3 seeds, and compare against a control that
+removes the *same number of random same-class images*. Leaky-subset accuracy falls
+**4.9 points** under neighbour removal and **0.0000** under the random control. Diluted
+across the full split the effect is **0.005 macro-F1**, inside a seed spread of 0.012 to
+0.019, so it is not measurable on the headline number at this budget. On the test split,
+for the model above, the class-matched leaky-minus-clean difference is
+**+0.020 ± 0.026 (z = 0.79)**. That is smaller than on the small CNN, because a better
+model has less headroom left to gain. Exact and near-exact duplicates were removed;
+statistical near-neighbours were measured and bounded rather than removed. See
 [ADR 0004](docs/adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
+
+## Not built yet
+
+- **1 · Segmentation (D3 PV01):** site-footprint IoU and Dice per rooftop subset, against a naive colour-threshold baseline.
+- **2 · Detection (D2):** mAP@0.5 from my own implementation checked against torchmetrics, mAP@0.5:0.95, and per-image panel-count error on the 63-image test split.
+- **3 · Tracking (D5, synthetic):** MOTA, IDF1 and ID switches, and how many unique modules remain after deduplicating detections across frames.
+- **5 · Analytics (D4):** a per-inverter slope ranking on real plant generation data.
+
+---
+
+## Scope: what this is and what it is not
+
+What ran is module 4. A small CNN written from scratch and an ImageNet ResNet-18 were
+trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
+config was evaluated once on the held-out test split. Calibration, a base-rate correction
+and a distillation experiment followed, on val or on the saved outputs of that one test
+run. D2 and D3 were downloaded and prepared (D2 deduplicated and re-split, D3 counted per
+subset), but no model has been trained on them.
+
+**It is not** a finished pipeline: segmentation, detection, tracking and analytics have no
+code yet, so nothing runs end to end. Its numbers are not comparable to a published
+benchmark, because D1 ships no official split. It is not a temperature or power-loss
+measurement, because the imagery carries no radiometric data.
 
 ---
 
@@ -72,32 +79,37 @@ rather than removed. See
 **From scratch** = I wrote the algorithm and the module composition, using `torch.nn` layers
 and NumPy primitives. I did not implement autograd, cuDNN kernels, or LAPACK routines.
 
-| Component | Written by me | Library | Cross-checked against |
-|---|---|---|---|
-| IoU, NMS, mAP@0.5 | ✓ | — | torchmetrics |
-| mAP@0.5:0.95 | — | torchmetrics | — |
-| U-Net | ✓ (`nn.Conv2d` etc.) | — | — |
-| Detector | — | Ultralytics YOLOv8 | — |
-| Kalman filter | ✓ | — | analytic 2-step test |
-| Assignment | — | `scipy.optimize.linear_sum_assignment` | — |
-| MOTA/IDF1 | — | motmetrics | — |
-| ID switches, unique-module error | ✓ | — | hand-computed toy |
-| OLS (normal equations, GD) | ✓ | — | `np.linalg.lstsq`, scikit-learn |
-| D1 duplicate search + components | ✓ | — | SHA-256 byte equality (a subset of it) |
-| Macro-F1, per-class recall | ✓ | — | `sklearn.metrics.f1_score`, every run |
-| Focal loss, KD loss, class weights | ✓ | `F.kl_div`, `F.cross_entropy` | hand-computed, `tests/test_cls_metrics.py` |
-| ECE, temperature scaling | ✓ | `scipy.optimize.minimize_scalar` fits T | hand-computed, `tests/test_cls_metrics.py` |
-| ResNet-18 backbone | — | torchvision, ImageNet weights | — |
+Rows marked **planned** belong to modules that are not built yet; for those, the last
+column is the planned cross-check.
+
+| Component | Status | Written by me | Library | Cross-checked against |
+|---|---|---|---|---|
+| IoU, NMS, mAP@0.5 | planned | ✓ | none | torchmetrics |
+| mAP@0.5:0.95 | planned | | torchmetrics | |
+| U-Net | planned | ✓ (`nn.Conv2d` etc.) | none | |
+| Detector | planned | | Ultralytics YOLOv8 | |
+| Kalman filter | planned | ✓ | none | analytic 2-step test |
+| Assignment | planned | | `scipy.optimize.linear_sum_assignment` | |
+| MOTA/IDF1 | planned | | motmetrics | |
+| ID switches, unique-module error | planned | ✓ | none | hand-computed toy |
+| OLS (normal equations, GD) | planned | ✓ | none | `np.linalg.lstsq`, scikit-learn |
+| D1 duplicate search + components | built | ✓ | none | SHA-256 byte equality (a subset of it) |
+| Macro-F1, per-class recall | built | ✓ | none | `sklearn.metrics.f1_score`, every run |
+| Focal loss, KD loss, class weights | built | ✓ | `F.kl_div`, `F.cross_entropy` | hand-computed, `tests/test_cls_metrics.py` |
+| ECE, temperature scaling | built | ✓ | `scipy.optimize.minimize_scalar` fits T | hand-computed, `tests/test_cls_metrics.py` |
+| ResNet-18 backbone | built | | torchvision, ImageNet weights | |
 
 ---
 
 ## There is no temperature in this project
 
-Neither D1 nor D2 carries radiometric data — both are 8-bit rendered imagery.
+Neither D1 nor D2 carries radiometric data; both are 8-bit rendered imagery.
 The field is `delta_dn_uncalibrated` (hotspot digital number minus panel median digital
 number), computed **within a single frame only**, never across frames.
 
-TODO — the full explanation, once the field is actually computed.
+The field exists in the `Finding` contract
+([`src/solar_inspect/contract.py`](src/solar_inspect/contract.py)), but no module computes
+it yet. [`docs/DATA.md`](docs/DATA.md) explains why the imagery cannot give a temperature.
 
 ---
 
@@ -116,10 +128,10 @@ python scripts/split_d1.py          # 4. rebuild D1's split
 
 **None of them is optional, and 3 comes before 4.** D2's published train/val/test splits
 are contaminated and are not used here; `configs/d2.yaml` points at the rebuilt split,
-which only exists once step 2 has run — see
+which only exists once step 2 has run. See
 [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md). D1 ships no split at all, and
-splitting it before deduplicating leaves a near-identical pair straddling train and test
-— see [ADR 0003](docs/adr/0003-d1-is-deduplicated-at-4-dn-by-component.md). Step 0 is not
+splitting it before deduplicating leaves a near-identical pair straddling train and test.
+See [ADR 0003](docs/adr/0003-d1-is-deduplicated-at-4-dn-by-component.md). Step 0 is not
 optional either: without the `--extra-index-url` line in `requirements.txt`, pip resolves
 `torch` to the CPU-only wheel and every GPU run here silently runs on the CPU.
 
@@ -127,13 +139,27 @@ optional either: without the `--extra-index-url` line in `requirements.txt`, pip
 
 ## Modules
 
-### 1 · Segmentation — site footprint
+### 4 · Classification and distillation (finished)
 
-PV01 is 0.1 m RGB rooftop imagery from a single geography. It is a **site-footprint /
-array-extent** primitive; it does not compose with the thermal stages and it cannot
-normalise thermal statistics.
+Twelve-class defect classification on D1: No-Anomaly plus eleven defect types. A
+116k-parameter CNN written from scratch
+([`model.py`](src/solar_inspect/classification/model.py)) is compared with an ImageNet
+ResNet-18 fine-tuned on single-channel crops
+([`resnet.py`](src/solar_inspect/classification/resnet.py)). Three imbalance treatments
+(class weights, focal loss, resampling) were ablated over three seeds against a noise floor
+of 0.02 declared before any arm ran; none beat plain cross-entropy. The ResNet-18 config was
+committed before the test split was read and evaluated once. Temperature scaling, a
+base-rate correction to 2.2% field prevalence and a distillation run came after. Every run
+is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/04-classification.md`](docs/explainers/04-classification.md).
 
-**Results are reported per rooftop subset, never pooled**, because the class balance
+### Data work already done for the unbuilt modules
+
+**1 · Segmentation, site footprint.** PV01 is 0.1 m RGB rooftop imagery from a single
+geography. It is a **site-footprint / array-extent** primitive; it does not compose with
+the thermal stages and it cannot normalise thermal statistics.
+
+Results will be reported per rooftop subset, never pooled, because the class balance
 across the three subsets differs by a factor of ten:
 
 | Subset | Masks | Positive pixels | A null all-background model scores |
@@ -145,57 +171,51 @@ across the three subsets differs by a factor of ten:
 
 That spread is the argument for per-subset reporting. Pooling hides it, and a pooled
 figure would make the null model look uniformly mediocre when on Brick it is deceptively
-strong and on SteelTile it is worse than a coin flip — the positive class is the
+strong and on SteelTile it is worse than a coin flip, because the positive class is the
 majority there.
 
-TODO — measured IoU/Dice, the naive baseline, overlay figures, and the greyscaled-D2
-negative result.
-
-### 2 · Detection
-
-**D2's published splits are not used.** 353 published files are only 252 unique images,
-and 34 of the 35 published test images are byte-identical to a train or val image. The
-split here is deduplicated by content hash and grouped by acquisition sortie —
+**2 · Detection.** D2's published splits are not used. 353 published files are only 252
+unique images, and 34 of the 35 published test images are byte-identical to a train or val
+image. The split here is deduplicated by content hash and grouped by acquisition sortie:
 **138 / 51 / 63 images, 10,612 / 4,929 / 3,984 boxes**. See
-[ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md).
+[ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md). Because this is not the published
+split, **no detection number from it will be comparable to a published number on D2.**
 
-Because this is not the published split, **no number below is comparable to a published
-number on D2.**
-
-`max_det` is set to **1000**, not Ultralytics' default of 300. Eight of the 252 unique
-frames carry more than 300 boxes (max 584) and three of those land in the test split, so
-the default would have silently truncated 3.2% of frames — and per-image panel-count
-error, the domain metric, would have been wrong with no error message anywhere.
-
-TODO — measured mAP, the NMS threshold sweep figure, panel-count error.
-
-### 3 · Tracking
-TODO
-
-### 4 · Classification and distillation
-TODO
-
-### 5 · Analytics and triage
-TODO
+`max_det` is set to **1000** in [`configs/det_yolo.yaml`](configs/det_yolo.yaml), not
+Ultralytics' default of 300. Eight of the 252 unique frames carry more than 300 boxes
+(max 584) and three of those land in the test split, so the default would have silently
+truncated 3.2% of frames. Per-image panel-count error, the domain metric, would then
+have been wrong with no error message anywhere.
 
 ---
 
 ## Tests
 
-TODO — paste the local `pytest` output.
+```bash
+python -m pytest
+```
+
+Run on 18 Oct 2026 on CPU only (Python 3.11.6, torch 2.11.0+cpu): **23 passed**, 7
+deprecation warnings from torch and pycocotools, in 15 s. The tests need no dataset and
+no GPU. They cover the classification maths, checked against hand-computed values, and the
+`Finding` contract's mask encoding.
 
 ---
 
 ## What I didn't do
 
-TODO
+- Sweep the distillation settings. KD ran at one declared α = 0.5 and T = 4; whether it helps elsewhere is not ruled out.
+- Run a capacity sweep on the student, which is the experiment that would test why soft targets did not separate Cell from Cell-Multi.
+- Ablate the two ResNet-18 adaptations (the 96×96 resize and the summed conv1 weights) or sweep its learning rate.
+- Measure latency in a setting where FLOPs dominate (INT8, ONNX Runtime, TensorRT, batch 1 on an embedded target).
+- Build modules 1, 2, 3 and 5. See "Not built yet" above.
 
 ---
 
 ## Licence
 
 AGPL-3.0. Ultralytics YOLOv8 is AGPL-3.0, and their licence terms require publicly
-releasing the complete corresponding source of the entire derivative work — so this repo
+releasing the complete corresponding source of the entire derivative work, so this repo
 is AGPL-3.0 too. Shipping something like this commercially, you would want an enterprise
 licence or a differently-licensed detector, which is one reason the metrics here are
 written by hand rather than pulled in from more of the stack.
