@@ -17,7 +17,12 @@ AC_POWER over the median AC_POWER of the plant's producing inverters at that
 timestamp (itself included when producing); a non-producing inverter scores 0.
 A timestamp with no producing inverter has no reference and gives no ratio for
 anyone. Summary per inverter: the median ratio and `n`, the number of ratios
-behind it.
+behind it. `sister_ratios` gives the ratio of every counted row.
+
+`zero_runs`: run lengths of AC_POWER == 0 over an inverter's counted
+intervals. A stretch continues only to the next 15-minute step; a missing row
+or an interval below `irr_min` ends it. One row per stretch: inverter, start,
+length in intervals.
 """
 from __future__ import annotations
 
@@ -37,9 +42,23 @@ def availability(df: pd.DataFrame, irr_min: float) -> pd.DataFrame:
     return out
 
 
-def sister_ratio(df: pd.DataFrame, irr_min: float) -> pd.DataFrame:
+def sister_ratios(df: pd.DataFrame, irr_min: float) -> pd.Series:
     c = counted(df, irr_min)
     ref = c[c["AC_POWER"] > 0].groupby("DATE_TIME")["AC_POWER"].median()
-    ratio = c["AC_POWER"] / c["DATE_TIME"].map(ref)   # NaN where nobody is producing
-    g = ratio.groupby(c["SOURCE_KEY"])
+    return c["AC_POWER"] / c["DATE_TIME"].map(ref)    # NaN where nobody is producing
+
+
+def sister_ratio(df: pd.DataFrame, irr_min: float) -> pd.DataFrame:
+    ratio = sister_ratios(df, irr_min)
+    g = ratio.groupby(df.loc[ratio.index, "SOURCE_KEY"])
     return pd.DataFrame({"n": g.count(), "sister_ratio": g.median()})
+
+
+def zero_runs(df: pd.DataFrame, irr_min: float,
+              step: pd.Timedelta = pd.Timedelta(minutes=15)) -> pd.DataFrame:
+    c = counted(df, irr_min).sort_values(["SOURCE_KEY", "DATE_TIME"])
+    z = c[c["AC_POWER"] == 0]
+    new = (z["SOURCE_KEY"] != z["SOURCE_KEY"].shift()) | (z["DATE_TIME"].diff() != step)
+    g = z.groupby(new.cumsum().to_numpy())
+    return pd.DataFrame({"SOURCE_KEY": g["SOURCE_KEY"].first(), "start": g["DATE_TIME"].first(),
+                         "intervals": g.size()}).reset_index(drop=True)
