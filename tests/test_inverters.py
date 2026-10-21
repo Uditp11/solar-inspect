@@ -18,6 +18,15 @@ Sister ratio, inverters A, B, C, threshold 0.1:
     t4  irr 0.05  A 100 B 1   C 1    not counted
 
     medians: A (2/3, 1) -> 5/6, B 4/3, C (0, 2/3) -> 1/3, each from 2 timestamps
+    per row (`sister_ratios`): the nine counted rows above, t2 NaN, t4 absent
+
+Zero-output stretches, threshold 0.1, 15-minute steps 0 to 5:
+
+    step  0    1    2    3    4 (irr 0.05)  5
+    A     0    0    5    0    0             0     -> runs at 0 (2 long), 3 (1), 5 (1)
+    B     0    --   0    7    7             7     -> runs at 0 (1), 2 (1): a missing
+                                                     row ends a stretch, as does an
+                                                     interval that is not counted
 """
 from __future__ import annotations
 
@@ -27,7 +36,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from solar_inspect.analytics.inverters import availability, sister_ratio
+from solar_inspect.analytics.inverters import (availability, sister_ratio, sister_ratios,
+                                               zero_runs)
 
 
 def frame(rows):
@@ -79,3 +89,22 @@ def test_sister_ratio_all_zero_timestamp_gives_no_ratio_and_no_division_by_zero(
     assert out["n"].tolist() == [0, 0, 0]
     assert out["sister_ratio"].isna().all()
     assert np.isfinite(full["sister_ratio"]).all()
+
+
+def test_sister_ratios_per_row():
+    out = sister_ratios(SISTER, 0.1)
+    assert len(out) == 9
+    np.testing.assert_allclose(out.to_numpy(), [2 / 3, 4 / 3, 0, np.nan, np.nan, np.nan, 1, 4 / 3, 2 / 3])
+
+
+def test_zero_runs_break_on_missing_and_uncounted_intervals():
+    t = pd.Timestamp("2020-05-15 06:00") + pd.to_timedelta(np.arange(6) * 15, unit="min")
+    irr = [0.5, 0.5, 0.5, 0.5, 0.05, 0.5]
+    a = [0, 0, 5, 0, 0, 0]
+    b = [0, None, 0, 7, 7, 7]
+    df = frame([(t[i], "A", irr[i], a[i]) for i in range(6)]
+               + [(t[i], "B", irr[i], b[i]) for i in range(6) if b[i] is not None])
+    out = zero_runs(df, 0.1)
+    assert out["SOURCE_KEY"].tolist() == ["A", "A", "A", "B", "B"]
+    assert out["start"].tolist() == [t[0], t[3], t[5], t[0], t[2]]
+    assert out["intervals"].tolist() == [2, 1, 1, 1, 1]
