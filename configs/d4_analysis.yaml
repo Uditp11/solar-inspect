@@ -66,14 +66,26 @@ sister_ratio:
   reference: "median AC_POWER of producing inverters, same plant, same timestamp"
   summary: median
 
-# Added after the first ranking run (f77ec31), before anything was computed with
-# it. Four Plant 2 inverters have no rows for the first ~8.9 days, so under the
-# declared rule their availability covers a shorter, later period than the other
-# eighteen's. The common window is the span in which every inverter of the plant
-# has rows: from the latest first row to the earliest last row over the plant's
-# inverters, both ends included. Availability is recomputed on the counted
-# intervals inside it, with every other rule unchanged (missing rows inside it
-# are still gaps, not outages), and its ranking is compared with the declared
-# one by Spearman. A robustness check only, like the sensitivity thresholds: it
-# never replaces the declared availability.
-common_window: "latest first row to earliest last row over the plant's inverters"
+# Common window, redefined after the first ranking run (f77ec31), before anything
+# was computed with this definition. The definition committed in 4e296c0 assumed
+# the four inverters' missing rows were at the start of the period. They are not,
+# so "latest first row to earliest last row" covered the whole period in both
+# plants and the check was a no-op when computed (Spearman with the declared
+# availability 1.000 / 1.000). It is replaced here; that commit stays in history.
+#
+# Measured row coverage (generation rows with a weather reading):
+# - Plant 2: 2,355 of 3,259 timestamps have a row for every inverter. 840 have 18
+#   inverters: IQ2d7wF4YD8zU1Q, NgDl19wMapZy17u, mqwcsP2rE7J0TFp and
+#   xMbIugepa2P7lBB have no rows after 2020-05-20 21:45 until 2020-05-29 16:15, a
+#   mid-period hole. Another 64, from 2020-05-19 22:15 to 2020-05-20 14:00, have
+#   only 12 inverters.
+# - Plant 1: 3,057 of 3,157 timestamps have every inverter; 100 have 4 to 21,
+#   spread over 14 days between 2020-05-15 and 2020-06-06.
+#
+# The common window is the set of timestamps at which every inverter of the
+# plant has a row, so every inverter is counted on identical timestamps.
+# Availability is recomputed on the counted intervals inside it with every other
+# rule unchanged, and its ranking is compared with the declared one by Spearman.
+# A robustness check only, like the sensitivity thresholds: it never replaces the
+# declared availability.
+common_window: "timestamps at which every inverter of the plant has a row"
