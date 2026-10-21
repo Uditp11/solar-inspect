@@ -65,3 +65,15 @@ hac_lags: "floor(4 * (n / 100) ** (2 / 9))"
 sister_ratio:
   reference: "median AC_POWER of producing inverters, same plant, same timestamp"
   summary: median
+
+# Added after the first ranking run (f77ec31), before anything was computed with
+# it. Four Plant 2 inverters have no rows for the first ~8.9 days, so under the
+# declared rule their availability covers a shorter, later period than the other
+# eighteen's. The common window is the span in which every inverter of the plant
+# has rows: from the latest first row to the earliest last row over the plant's
+# inverters, both ends included. Availability is recomputed on the counted
+# intervals inside it, with every other rule unchanged (missing rows inside it
+# are still gaps, not outages), and its ranking is compared with the declared
+# one by Spearman. A robustness check only, like the sensitivity thresholds: it
+# never replaces the declared availability.
+common_window: "latest first row to earliest last row over the plant's inverters"
