@@ -76,7 +76,7 @@ def test_rle_roundtrip_degenerate_masks(fill):
 
 
 def test_rle_roundtrip_iou():
-    """The encode -> decode -> IoU round-trip required by spec 7.
+    """IoU survives an encode -> decode round-trip: 1.0 against itself, 1/3 shifted.
 
     Identical masks give exactly 1.0. Against a mask shifted by (+1, +1) the
     value is hand-computed: both rectangles are 3x4 = 12 px, they overlap on

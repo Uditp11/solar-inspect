@@ -54,7 +54,7 @@ from solar_inspect.classification.calibration import (BINS, ece,     # noqa: E40
                                                       nll, softmax)
 from solar_inspect.classification.train import metrics               # noqa: E402
 
-FIELD_PREVALENCE = 0.022        # anomalies, spec 5.2 / the D1 paper
+FIELD_PREVALENCE = 0.022        # anomalies, as reported in the D1 dataset paper (ICLR 2020)
 NULL_CLASS = "No-Anomaly"
 PRECISION_TARGET = 0.50
 

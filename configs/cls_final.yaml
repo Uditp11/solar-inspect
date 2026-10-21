@@ -1,7 +1,9 @@
 # THE FINAL CLASSIFICATION CONFIG. Committed and pushed before the test split
-# was read, and never edited afterwards. That order is fixed and it
-# fails invisibly if it is broken, so scripts/eval_test_d1.py refuses to run
-# unless this file is tracked, unmodified, and contained in origin/main.
+# was read. Its values were never edited after that; its comments were edited
+# twice, once to remap a recorded SHA and once in a wording pass. That order is
+# fixed and it fails invisibly if it is broken, so scripts/eval_test_d1.py
+# refuses to run unless this file is tracked, unmodified, and contained in
+# origin/main.
 #
 #     python scripts/eval_test_d1.py
 #
