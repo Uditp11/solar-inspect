@@ -511,12 +511,15 @@ of AC_POWER on IRRADIATION over its producing counted intervals, with a 95% Newe
 "CIs at median" counts inverters whose interval contains the plant's median slope, i.e. that cannot
 be told apart from it. Spearman columns compare the slope ranking with the robustness model's
 (MODULE_TEMPERATURE added) and with the sister-ratio ranking; the last column is how many of the
-bottom three by slope are also in the bottom three by sister ratio. Full output:
-`runs/d4_rank_<run>/rank.json`.
+bottom three by slope are also in the bottom three by sister ratio. The common-window column is the
+Spearman agreement of the declared availability ranking with availability recomputed only at the
+timestamps where every inverter of the plant has a row (declared in `ab75d6b`; a robustness check,
+never a replacement). Full output: `runs/d4_rank_<run>/rank.json`.
 
-| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap |
-|---|---|---|---|---|---|---|---|---|---|
-| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 |
+| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap | Spearman availability vs common window |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | not computed |
+| 20261021T180059Z | `277d21c` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 |
 
 ## D4 post-hoc checks
 
