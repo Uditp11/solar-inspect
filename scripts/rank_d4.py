@@ -5,8 +5,9 @@
 Every rule comes from configs/d4_analysis.yaml, committed before any number
 below existed. Per plant:
 
-- availability per inverter at the declared counting threshold, and at the two
-  sensitivity thresholds (reported, never adopted);
+- availability per inverter at the declared counting threshold, at the two
+  sensitivity thresholds, and on the common window, the timestamps at which
+  every inverter of the plant has a row (all three reported, never adopted);
 - performance: per inverter, OLS of AC_POWER on IRRADIATION on its producing
   counted intervals, ranked on the slope, with a 95% interval from Newey-West
   standard errors (normal critical value, lags by the declared rule on that
@@ -78,6 +79,10 @@ def plant_tables(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
     t = availability(df, irr_min)
     for alt in cfg["sensitivity_counting_irradiance_min"]:
         t[f"availability_at_{alt}"] = availability(df, alt)["availability"]
+    present = df.groupby("DATE_TIME")["SOURCE_KEY"].nunique()
+    common = present.index[present == df["SOURCE_KEY"].nunique()]
+    t["availability_common_window"] = availability(
+        df[df["DATE_TIME"].isin(common)], irr_min)["availability"]
 
     rows = counted(df, irr_min)
     rows = rows[rows[d4.TARGET] > 0].sort_values("DATE_TIME")
@@ -90,6 +95,7 @@ def plant_tables(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
     median_slope = float(t["perf_slope"].median())
     t["ci_contains_plant_median"] = (t["perf_ci_low"] <= median_slope) & (median_slope <= t["perf_ci_high"])
     t["rank_availability"] = t["availability"].rank(method="min").astype(int)
+    t["rank_availability_common_window"] = t["availability_common_window"].rank(method="min").astype(int)
     t["rank_slope"] = t["perf_slope"].rank(method="min").astype(int)
     t["rank_robust_slope"] = t["robust_slope"].rank(method="min").astype(int)
     t["rank_sister"] = t["sister_sister_ratio"].rank(method="min").astype(int)
@@ -111,6 +117,14 @@ def plant_tables(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
     for alt in cfg["sensitivity_counting_irradiance_min"]:
         summary[f"spearman_availability_vs_at_{alt}"] = float(
             stats.spearmanr(t["availability"], t[f"availability_at_{alt}"])[0])
+    summary["common_window"] = {
+        "timestamps": int(len(common)), "of_timestamps": int(len(present)),
+        "counted_timestamps": int(counted(df[df["DATE_TIME"].isin(common)],
+                                          irr_min)["DATE_TIME"].nunique()),
+        "availability_median": float(t["availability_common_window"].median()),
+        "availability_min": float(t["availability_common_window"].min()),
+        "spearman_vs_declared": float(stats.spearmanr(t["availability"],
+                                                      t["availability_common_window"])[0])}
 
     X = rows[list(d4.FEATURES)].to_numpy(dtype=float)
     y = rows[d4.TARGET].to_numpy(dtype=float)
@@ -140,7 +154,13 @@ def main() -> int:
               f"slope~sister {s['spearman_slope_vs_sister']:.3f}, "
               f"bottom-3 overlap {s['bottom3_overlap']}/3; "
               f"post-hoc plant R2 on producing counted {s['posthoc_plant_r2_producing_counted']['r2']:.4f}")
-        print(t[["counted", "missing", "availability", "perf_slope", "perf_ci_low", "perf_ci_high",
+        cw = s["common_window"]
+        print(f"common window {cw['timestamps']:,} of {cw['of_timestamps']:,} timestamps "
+              f"({cw['counted_timestamps']:,} counted): availability median "
+              f"{cw['availability_median']:.4f} (min {cw['availability_min']:.4f}), "
+              f"Spearman vs declared {cw['spearman_vs_declared']:.3f}")
+        print(t[["counted", "missing", "availability", "availability_common_window",
+                 "perf_slope", "perf_ci_low", "perf_ci_high",
                  "ci_contains_plant_median", "robust_slope", "sister_sister_ratio"]].round(4))
 
     (dest / "rank.json").write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8", newline="\n")
@@ -153,7 +173,9 @@ def main() -> int:
           f"| {p1['indistinguishable_from_median']} / {p2['indistinguishable_from_median']} "
           f"| {p1['spearman_slope_vs_robust']:.3f} / {p2['spearman_slope_vs_robust']:.3f} "
           f"| {p1['spearman_slope_vs_sister']:.3f} / {p2['spearman_slope_vs_sister']:.3f} "
-          f"| {p1['bottom3_overlap']} / {p2['bottom3_overlap']} |")
+          f"| {p1['bottom3_overlap']} / {p2['bottom3_overlap']} "
+          f"| {p1['common_window']['spearman_vs_declared']:.3f} / "
+          f"{p2['common_window']['spearman_vs_declared']:.3f} |")
     return 0
 
 
