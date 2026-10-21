@@ -1,0 +1,67 @@
+# D4 per-inverter analysis rules, declared on 21 Oct 2026 before any
+# per-inverter number was computed. Nothing below is tuned against a result.
+# Any later change is a new commit with its reason, and the old values stay in
+# the history.
+#
+# Daylight intervals with AC_POWER == 0 are split out: they are not kept in the
+# slope fit (zero output under sun is not something the weather columns can
+# explain) and not silently dropped either. They are what availability counts.
+
+# Same night filter as the plant-level fit, so the two stay comparable.
+daylight: "IRRADIATION > 0"
+
+# kW/m² (0.1 = 100 W/m²). Availability and performance are both counted only at
+# or above this, so dawn and dusk, when an inverter is legitimately not yet
+# producing, do not count as outages. Declared, not tuned.
+counting_irradiance_min: 0.1
+
+# Reported later as a robustness check on availability only. Neither value ever
+# replaces counting_irradiance_min.
+sensitivity_counting_irradiance_min: [0.05, 0.2]
+
+# An inverter is producing in an interval when it puts out any AC at all.
+producing: "AC_POWER > 0"
+
+# Per inverter: producing intervals / counted intervals, where a counted
+# interval is a generation row with IRRADIATION >= counting_irradiance_min.
+# A timestamp with no row for that inverter is a data gap, not an interval, so
+# it is neither producing nor an outage; missing rows per inverter are reported
+# next to availability so the two can be told apart.
+availability: "producing / counted"
+
+performance_model:
+  # Per inverter, OLS of AC_POWER on IRRADIATION alone, fitted on that
+  # inverter's producing counted intervals. All inverters of a plant share one
+  # weather sensor, so the irradiance slope is the per-inverter quantity that
+  # differs; inverters are ranked on it.
+  primary:
+    target: AC_POWER
+    features: [IRRADIATION]
+    rows: "producing counted intervals"
+    rank_on: IRRADIATION
+  # Same rows, MODULE_TEMPERATURE added. Not a contender to be chosen after
+  # seeing both: its ranking is compared with the primary one by Spearman rank
+  # correlation and the agreement is what gets reported.
+  robustness:
+    target: AC_POWER
+    features: [IRRADIATION, MODULE_TEMPERATURE]
+    rows: "producing counted intervals"
+    rank_on: IRRADIATION
+    agreement: spearman
+
+# Newey-West rule of thumb, n being the number of rows in the fit the
+# covariance is computed for. Bartlett kernel. Lags count consecutive rows of
+# that fit in time order: the night break and any missing timestamps are not
+# filled, so a lag can span a gap.
+hac_lags: "floor(4 * (n / 100) ** (2 / 9))"
+
+# At each counted timestamp: an inverter's AC_POWER divided by the median
+# AC_POWER of all producing inverters of the same plant at that timestamp (the
+# inverter itself included when it is producing). A non-producing inverter
+# scores 0 there. A timestamp at which no inverter is producing has no
+# reference, so it gives no ratio for anyone rather than a division by zero.
+# Per-inverter summary: the median of its ratios. No regression involved:
+# inverters under the same sky are compared with each other.
+sister_ratio:
+  reference: "median AC_POWER of producing inverters, same plant, same timestamp"
+  summary: median
