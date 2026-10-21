@@ -488,6 +488,20 @@ plants, daylight fit. Full output: `runs/ols_d4_<run>/fit.json`.
 |---|---|---|---|---|---|---|---|---|
 | 20261021T160204Z | `89aaa3e` | no | `scripts/ols_d4.py` | 38,376 / 38,722 | **0.9602** / **0.4354** | 0.9790 / 0.6136 | 2.6e-10 | 5.9e-06 |
 
+## D4 plant-level diagnostics runs
+
+Same ledger rules. Diagnostics of the plant-level daylight fit above (same rows, same
+coefficients), values Plant 1 / Plant 2. The fit pools 22 inverter series, so Durbin-Watson and the
+Newey-West lags are computed within each inverter's series; Driscoll-Kraay (statsmodels
+`hac-groupsum`, scores summed per timestamp) also allows for the error shared by inverters under one
+weather sensor. SE ratios are the range over the four coefficients of that covariance's standard
+error divided by the classical one, at the HAC lag L shown. Full output, including the per-coefficient
+standard errors, Breusch-Pagan and the ACF: `runs/d4_diag_<run>/diagnostics.json`.
+
+| run | git SHA | dirty | script | n / inverters / timestamps | R² (adjusted) | VIF range | DW within inverter | HAC L | SE ratio, Newey-West / classical | SE ratio, Driscoll-Kraay / classical |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20261021T162706Z | `a6cf29f` | no | `scripts/diagnostics_d4.py` | 38,376 / 22 / 1,754 ; 38,722 / 22 / 1,862 | 0.9602 (0.9602) / 0.4354 (0.4354) | 4.4 to 23.1 / 6.7 to 30.5 | 1.010 / 0.253 | 15 / 15 | 1.31 to 1.90 / 1.62 to 3.09 | 3.53 to 5.33 / 3.50 to 5.17 |
+
 ## D4 per-inverter runs
 
 Same ledger rules. Rules from `configs/d4_analysis.yaml`, committed before any per-inverter number
