@@ -482,11 +482,12 @@ moment), with the columns a regression needs instead of a classifier's. Each run
 AC_POWER on IRRADIATION, MODULE_TEMPERATURE and AMBIENT_TEMPERATURE per plant, values given as
 Plant 1 / Plant 2. R² is **in-sample**: nothing is held out, so it measures fit, not prediction.
 The diff columns are the largest absolute coefficient difference from `np.linalg.lstsq`, over both
-plants, daylight fit. Full output: `runs/ols_d4_<run>/fit.json`.
+plants, daylight fit. The last column was added later, copied from the same run's `fit.json`.
+Full output: `runs/ols_d4_<run>/fit.json`.
 
-| run | git SHA | dirty | script | daylight n | R² daylight | R² with night | normal eq. vs lstsq | grad. descent vs lstsq |
-|---|---|---|---|---|---|---|---|---|
-| 20261021T160204Z | `89aaa3e` | no | `scripts/ols_d4.py` | 38,376 / 38,722 | **0.9602** / **0.4354** | 0.9790 / 0.6136 | 2.6e-10 | 5.9e-06 |
+| run | git SHA | dirty | script | daylight n | R² daylight | R² with night | normal eq. vs lstsq | grad. descent vs lstsq | n with night |
+|---|---|---|---|---|---|---|---|---|---|
+| 20261021T160204Z | `89aaa3e` | no | `scripts/ols_d4.py` | 38,376 / 38,722 | **0.9602** / **0.4354** | 0.9790 / 0.6136 | 2.6e-10 | 5.9e-06 | 68,774 / 67,698 |
 
 ## D4 plant-level diagnostics runs
 
@@ -516,14 +517,16 @@ Spearman agreement of the declared availability ranking with availability recomp
 timestamps where every inverter of the plant has a row (declared in `ab75d6b`; a robustness check,
 never a replacement). The last column counts inverters whose 95% interval excludes the plant median
 and, in brackets, how many of those are still excluded by a Bonferroni interval (z for 0.05 / 22,
-two-sided, about 3.05): at 95%, about one of 22 is expected to miss by chance. Full output:
+two-sided, about 3.05): at 95%, about one of 22 is expected to miss by chance. The last two columns
+were added later, copied from each run's own `rank.json`: counted rows (IRRADIATION ≥ 0.1 kW/m²)
+with the number of counted timestamps, and the common window's timestamps out of all. Full output:
 `runs/d4_rank_<run>/rank.json`.
 
-| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap | Spearman availability vs common window | flagged at 95% (surviving Bonferroni) |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | not computed | not computed |
-| 20261021T180059Z | `277d21c` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 | not computed |
-| 20261021T180327Z | `de4fb59` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 | 9 (4) / 9 (5) |
+| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap | Spearman availability vs common window | flagged at 95% (surviving Bonferroni) | counted rows (counted timestamps) | common-window timestamps |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | not computed | not computed | 30,718 (1,397) / 28,818 (1,392) | not computed |
+| 20261021T180059Z | `277d21c` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 | not computed | 30,718 (1,397) / 28,818 (1,392) | 3,057 of 3,157 / 2,355 of 3,259 |
+| 20261021T180327Z | `de4fb59` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 | 9 (4) / 9 (5) | 30,718 (1,397) / 28,818 (1,392) | 3,057 of 3,157 / 2,355 of 3,259 |
 
 ## D4 post-hoc checks
 
