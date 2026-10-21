@@ -487,3 +487,19 @@ plants, daylight fit. Full output: `runs/ols_d4_<run>/fit.json`.
 | run | git SHA | dirty | script | daylight n | R² daylight | R² with night | normal eq. vs lstsq | grad. descent vs lstsq |
 |---|---|---|---|---|---|---|---|---|
 | 20261021T160204Z | `89aaa3e` | no | `scripts/ols_d4.py` | 38,376 / 38,722 | **0.9602** / **0.4354** | 0.9790 / 0.6136 | 2.6e-10 | 5.9e-06 |
+
+## D4 per-inverter runs
+
+Same ledger rules. Rules from `configs/d4_analysis.yaml`, committed before any per-inverter number
+existed: counted intervals have IRRADIATION ≥ 0.1 kW/m², producing means AC_POWER > 0. Values are
+Plant 1 / Plant 2, 22 inverters each. The slope is the IRRADIATION coefficient of a per-inverter OLS
+of AC_POWER on IRRADIATION over its producing counted intervals, with a 95% Newey-West interval;
+"CIs at median" counts inverters whose interval contains the plant's median slope, i.e. that cannot
+be told apart from it. Spearman columns compare the slope ranking with the robustness model's
+(MODULE_TEMPERATURE added) and with the sister-ratio ranking; the last column is how many of the
+bottom three by slope are also in the bottom three by sister ratio. Full output:
+`runs/d4_rank_<run>/rank.json`.
+
+| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap |
+|---|---|---|---|---|---|---|---|---|---|
+| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 |
