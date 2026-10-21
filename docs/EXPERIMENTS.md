@@ -514,12 +514,16 @@ be told apart from it. Spearman columns compare the slope ranking with the robus
 bottom three by slope are also in the bottom three by sister ratio. The common-window column is the
 Spearman agreement of the declared availability ranking with availability recomputed only at the
 timestamps where every inverter of the plant has a row (declared in `ab75d6b`; a robustness check,
-never a replacement). Full output: `runs/d4_rank_<run>/rank.json`.
+never a replacement). The last column counts inverters whose 95% interval excludes the plant median
+and, in brackets, how many of those are still excluded by a Bonferroni interval (z for 0.05 / 22,
+two-sided, about 3.05): at 95%, about one of 22 is expected to miss by chance. Full output:
+`runs/d4_rank_<run>/rank.json`.
 
-| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap | Spearman availability vs common window |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | not computed |
-| 20261021T180059Z | `277d21c` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 |
+| run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap | Spearman availability vs common window | flagged at 95% (surviving Bonferroni) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | not computed | not computed |
+| 20261021T180059Z | `277d21c` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 | not computed |
+| 20261021T180327Z | `de4fb59` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 | 1.000 / 0.914 | 9 (4) / 9 (5) |
 
 ## D4 post-hoc checks
 
