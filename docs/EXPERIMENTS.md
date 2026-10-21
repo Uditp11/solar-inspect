@@ -503,3 +503,16 @@ bottom three by slope are also in the bottom three by sister ratio. Full output:
 | run | git SHA | dirty | script | producing counted rows | availability median (min) | CIs at median | Spearman slope vs robustness | Spearman slope vs sister ratio | bottom-3 overlap |
 |---|---|---|---|---|---|---|---|---|---|
 | 20261021T162847Z | `f77ec31` | no | `scripts/rank_d4.py` | 30,655 / 25,044 | 1.0000 (0.9857) / 0.8714 (0.7716) | 13 / 13 | 0.805 / 0.587 | 0.740 / 0.907 | 2 / 2 |
+
+## D4 post-hoc checks
+
+Same ledger rules. **Post-hoc**: each check here was made after the per-inverter rankings were
+seen, to explain a number rather than to choose a model, and none replaces a declared fit. The
+R² split refits the plant-level three-feature model of `scripts/ols_d4.py` on four row sets;
+"daylight" is IRRADIATION > 0 (the declared fit), "counted" is IRRADIATION ≥ 0.1 kW/m², and
+"producing" keeps AC_POWER > 0 only. Values are R² (n rows), Plant 1 / Plant 2, in-sample. Full
+output: `runs/d4_r2split_<run>/r2_split.json`.
+
+| run | git SHA | dirty | script | daylight, zeros kept (declared) | daylight, producing | counted, zeros kept | counted, producing |
+|---|---|---|---|---|---|---|---|
+| 20261021T171435Z | `9153f89` | no | `scripts/r2_split_d4.py` | 0.9602 (38,376) / 0.4354 (38,722) | 0.9695 (36,823) / 0.8854 (32,022) | 0.9316 (30,718) / 0.1999 (28,818) | 0.9520 (30,655) / 0.8118 (25,044) |
