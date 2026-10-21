@@ -1,7 +1,8 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (18 Oct 2026): in progress.** Module 4 (classification) is finished.
-> Segmentation, detection, tracking and analytics are not built yet.
+> **Status (21 Oct 2026): in progress.** Module 4 (classification) is finished. Module 5's
+> regression and per-inverter analysis on plant generation data is finished; its triage and
+> SQL layer is not built yet. Segmentation, detection and tracking are not built yet.
 
 The plan is four perception modules trained and benchmarked independently on public solar imagery,
 sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
@@ -49,25 +50,65 @@ model has less headroom left to gain. Exact and near-exact duplicates were remov
 statistical near-neighbours were measured and bounded rather than removed. See
 [ADR 0004](docs/adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
 
+## Results: module 5, analytics on plant generation data (regression half)
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D4
+sections) with the commit and script that produced it, and is given as **Plant 1 / Plant 2**
+beside the rows, inverters and timestamps it was measured on. D4 is 34 days of 15-minute
+inverter data from two plants, one weather sensor each. **Everything here is in-sample**:
+nothing is held out, so these numbers describe those 34 days and are not a predictive score.
+
+| Module | Data | Metric | Value | Split size |
+|---|---|---|---|---|
+| 5 · Regression | D4 | R², AC power on irradiation, module and ambient temperature, daylight rows | 0.9602 / 0.4354 | 38,376 / 38,722 rows · 22 / 22 inverters · 1,754 / 1,862 timestamps |
+| 5 · Regression | D4 | R² with night rows left in (inflation) | 0.9790 / 0.6136 (+0.019 / +0.178) | 68,774 / 67,698 rows · 22 / 22 inverters |
+| 5 · Regression | D4 | standard error ÷ classical, Newey-West within inverter | 1.31 to 1.90 / 1.62 to 3.09 | 38,376 / 38,722 rows · 1,754 / 1,862 timestamps |
+| 5 · Regression | D4 | standard error ÷ classical, Driscoll-Kraay (shared sensor) | 3.53 to 5.33 / 3.50 to 5.17 | 38,376 / 38,722 rows · 1,754 / 1,862 timestamps |
+| 5 · Per inverter | D4 | availability, median (min) | 1.0000 (0.9857) / 0.8714 (0.7716) | 30,718 / 28,818 counted rows · 22 / 22 inverters · 1,397 / 1,392 counted timestamps |
+| 5 · Per inverter | D4 | slope intervals excluding the plant median, 95% (Bonferroni) | 9 (4) / 9 (5) of 22 | 30,655 / 25,044 producing counted rows · 22 / 22 inverters |
+| 5 · Per inverter | D4 | bottom 3 by slope also bottom 3 by sister ratio · Spearman of the two rankings | 2 / 2 of 3 · 0.740 / 0.907 | 30,655 / 25,044 producing counted rows · 22 / 22 inverters |
+| 5 · Per inverter | D4 | Spearman, declared availability vs common window | 1.000 / 0.914 | 3,057 of 3,157 / 2,355 of 3,259 timestamps · 22 / 22 inverters |
+
+The standard-error ratios are ranges over the four coefficients. A counted row is an
+inverter's 15-minute interval with irradiation ≥ 0.1 kW/m²; availability is the share of
+counted rows with any AC output, and the slope is a per-inverter fit of AC power on
+irradiation over its producing counted rows, with a 95% Newey-West interval. All of these
+rules were committed in [`configs/d4_analysis.yaml`](configs/d4_analysis.yaml) before any
+per-inverter number existed.
+
+**What it shows.** The two lowest-slope inverters of each plant are clear of the rest under
+every check: the robustness model, the regression-free sister ratio, Bonferroni, and a pooled
+fit whose errors allow for the shared sensor. Their AC/DC conversion matches their sisters'
+(a DC-slope ranking agrees with the AC one at Spearman 0.999 / 1.000), so their shortfall is
+already in the DC they receive, on the array side, not in the inverter. Which array-side cause
+it is, D4 cannot say. Plant 2's low R² is mostly zero-output intervals under sun: 3,774
+counted intervals at zero, of which 423 have more than half the plant at zero, 3,264 a
+smaller group and 87 a single inverter, concentrated at midday. The cleaning findings, the
+diagnostics, the confounders D4 can and cannot measure, and the IEC 61724 terms it lacks the
+inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
+
 ## Not built yet
 
 - **1 · Segmentation (D3 PV01):** site-footprint IoU and Dice per rooftop subset, against a naive colour-threshold baseline.
 - **2 · Detection (D2):** mAP@0.5 from my own implementation checked against torchmetrics, mAP@0.5:0.95, and per-image panel-count error on the 63-image test split.
 - **3 · Tracking (D5, synthetic):** MOTA, IDF1 and ID switches, and how many unique modules remain after deduplicating detections across frames.
-- **5 · Analytics (D4):** a per-inverter slope ranking on real plant generation data.
+- **5 · Triage and SQL:** ordinal triage of findings and an SQL layer over the analytics. The regression and per-inverter half of module 5 is built (above).
 
 ---
 
 ## Scope: what this is and what it is not
 
-What ran is module 4. A small CNN written from scratch and an ImageNet ResNet-18 were
+What ran is module 4 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
 trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
 config was evaluated once on the held-out test split. Calibration, a base-rate correction
 and a distillation experiment followed, on val or on the saved outputs of that one test
 run. D2 and D3 were downloaded and prepared (D2 deduplicated and re-split, D3 counted per
 subset), but no model has been trained on them.
 
-**It is not** a finished pipeline: segmentation, detection, tracking and analytics have no
+Module 5's regression half ran on D4, real generation data from two plants: a plant-level
+fit with its diagnostics, and per-inverter availability and performance rankings.
+
+**It is not** a finished pipeline: segmentation, detection, tracking, triage and SQL have no
 code yet, so nothing runs end to end. Its numbers are not comparable to a published
 benchmark, because D1 ships no official split. It is not a temperature or power-loss
 measurement, because the imagery carries no radiometric data.
@@ -92,7 +133,13 @@ column is the planned cross-check.
 | Assignment | planned | | `scipy.optimize.linear_sum_assignment` | |
 | MOTA/IDF1 | planned | | motmetrics | |
 | ID switches, unique-module error | planned | ✓ | none | hand-computed toy |
-| OLS (normal equations, GD) | planned | ✓ | none | `np.linalg.lstsq`, scikit-learn |
+| OLS, normal equations | built | ✓ | linear solve: `scipy.linalg.cho_solve` | `np.linalg.lstsq`, scikit-learn |
+| OLS, gradient descent | built | ✓ | none | `np.linalg.lstsq`, scikit-learn |
+| Durbin-Watson, VIF | built | ✓ | none | hand-computed, `tests/test_diagnostics.py` |
+| Classical and Newey-West covariance | built | ✓ | `scipy.linalg.cho_solve` for (AᵀA)⁻¹ | hand-computed; statsmodels `HAC` and `hac-panel`, to 1e-10 |
+| Driscoll-Kraay covariance, ACF, Breusch-Pagan | built | | statsmodels | |
+| Availability, sister ratio, zero-output stretches | built | ✓ | pandas grouping | hand-computed toy frames, `tests/test_inverters.py` |
+| Spearman rank correlation | built | | `scipy.stats.spearmanr` | |
 | D1 duplicate search + components | built | ✓ | none | SHA-256 byte equality (a subset of it) |
 | Macro-F1, per-class recall | built | ✓ | none | `sklearn.metrics.f1_score`, every run |
 | Focal loss, KD loss, class weights | built | ✓ | `F.kl_div`, `F.cross_entropy` | hand-computed, `tests/test_cls_metrics.py` |
@@ -101,7 +148,7 @@ column is the planned cross-check.
 
 ---
 
-## There is no temperature in this project
+## There is no temperature in the imagery
 
 Neither D1 nor D2 carries radiometric data; both are 8-bit rendered imagery.
 The field is `delta_dn_uncalibrated` (hotspot digital number minus panel median digital
@@ -109,7 +156,9 @@ number), computed **within a single frame only**, never across frames.
 
 The field exists in the `Finding` contract
 ([`src/solar_inspect/contract.py`](src/solar_inspect/contract.py)), but no module computes
-it yet. [`docs/DATA.md`](docs/DATA.md) explains why the imagery cannot give a temperature.
+it yet. [`docs/DATA.md`](docs/DATA.md) explains why the imagery cannot give a temperature. D4's
+module and ambient temperatures are a different thing: readings from each plant's weather
+sensor, used as such in module 5, and they say nothing about the imagery.
 
 ---
 
@@ -153,6 +202,18 @@ base-rate correction to 2.2% field prevalence and a distillation run came after.
 is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/04-classification.md`](docs/explainers/04-classification.md).
 
+### 5 · Analytics on plant generation data (regression half finished)
+
+AC power regressed on the weather columns per plant, solved two ways from scratch (normal
+equations with a Cholesky solve, and gradient descent) and checked against `lstsq` and
+scikit-learn; diagnosed for the assumption this data breaks (autocorrelation), with
+Newey-West and Driscoll-Kraay standard errors; then per-inverter availability and
+performance rankings under rules committed before any per-inverter number existed, with a
+regression-free sister-ratio comparison, robustness, sensitivity and multiple-comparison
+checks, and a measured look at the confounders. Every run is in
+[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
+
 ### Data work already done for the unbuilt modules
 
 **1 · Segmentation, site footprint.** PV01 is 0.1 m RGB rooftop imagery from a single
@@ -195,9 +256,12 @@ have been wrong with no error message anywhere.
 python -m pytest
 ```
 
-Run on 18 Oct 2026 on CPU only (Python 3.11.6, torch 2.11.0+cpu): **23 passed**, 7
-deprecation warnings from torch and pycocotools, in 15 s. The tests need no dataset and
-no GPU. They cover the classification maths, checked against hand-computed values, and the
+Run on 21 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **67 passed**, 7 deprecation
+warnings from torch and pycocotools, in 8 s. No test needs a GPU. Three D4 tests read the
+real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
+dataset. They cover the classification maths and the analytics primitives (OLS, covariance,
+Durbin-Watson, VIF, availability, sister ratio, zero-output stretches), checked against
+hand-computed values and against statsmodels where it computes the same definition, and the
 `Finding` contract's mask encoding.
 
 ---
@@ -208,7 +272,10 @@ no GPU. They cover the classification maths, checked against hand-computed value
 - Run a capacity sweep on the student, which is the experiment that would test why soft targets did not separate Cell from Cell-Multi.
 - Ablate the two ResNet-18 adaptations (the 96×96 resize and the summed conv1 weights) or sweep its learning rate.
 - Measure latency in a setting where FLOPs dominate (INT8, ONNX Runtime, TensorRT, batch 1 on an embedded target).
-- Build modules 1, 2, 3 and 5. See "Not built yet" above.
+- Compute a performance ratio or specific yield (kWh/kWp) for D4. It needs nameplate DC capacity per inverter and plane-of-array irradiance, and D4 has neither, so the per-inverter slope cannot tell a weak inverter from a smaller array, and the DC/AC ratio is not measurable.
+- Identify a cause for any underperforming inverter. The confounders are measured as patterns or stated as not measurable; 34 days cannot separate a fault from a season.
+- Separate partial output from the main power curve in the slope fits. Plant 2's producing intervals include some well below the line, and they pull its slopes down.
+- Build modules 1, 2 and 3, or module 5's triage and SQL layer. See "Not built yet" above.
 
 ---
 
