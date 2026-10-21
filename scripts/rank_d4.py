@@ -12,7 +12,10 @@ below existed. Per plant:
   counted intervals, ranked on the slope, with a 95% interval from Newey-West
   standard errors (normal critical value, lags by the declared rule on that
   inverter's n). An inverter whose interval contains the plant's median slope
-  is marked indistinguishable from it rather than ranked as if ordered;
+  is marked indistinguishable from it rather than ranked as if ordered. With 22
+  intervals at 95%, about one misses the median by chance alone, so a
+  Bonferroni interval (z for 0.05 / 22, two-sided) is reported beside it as an
+  extra column, never in its place;
 - the robustness model (MODULE_TEMPERATURE added) and the Spearman agreement
   of its slope ranking with the primary one;
 - the sister ratio, its Spearman agreement with the slope ranking, and the
@@ -94,6 +97,10 @@ def plant_tables(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
 
     median_slope = float(t["perf_slope"].median())
     t["ci_contains_plant_median"] = (t["perf_ci_low"] <= median_slope) & (median_slope <= t["perf_ci_high"])
+    z_bonf = float(stats.norm.ppf(1 - 0.05 / (2 * len(t))))
+    t["bonferroni_contains_plant_median"] = (
+        (t["perf_slope"] - z_bonf * t["perf_se_hac"]).le(median_slope)
+        & (t["perf_slope"] + z_bonf * t["perf_se_hac"]).ge(median_slope))
     t["rank_availability"] = t["availability"].rank(method="min").astype(int)
     t["rank_availability_common_window"] = t["availability_common_window"].rank(method="min").astype(int)
     t["rank_slope"] = t["perf_slope"].rank(method="min").astype(int)
@@ -105,6 +112,10 @@ def plant_tables(df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, dict]:
     summary = {
         "median_slope": median_slope,
         "indistinguishable_from_median": int(t["ci_contains_plant_median"].sum()),
+        "bonferroni_z": z_bonf,
+        "expected_chance_misses_at_95": 0.05 * len(t),
+        "flagged_surviving_bonferroni": sorted(
+            t.index[~t["ci_contains_plant_median"] & ~t["bonferroni_contains_plant_median"]]),
         "spearman_slope_vs_robust": float(stats.spearmanr(t["perf_slope"], t["robust_slope"])[0]),
         "spearman_slope_vs_sister": float(stats.spearmanr(t["perf_slope"],
                                                           t["sister_sister_ratio"])[0]),
@@ -149,7 +160,9 @@ def main() -> int:
         t.to_csv(dest / f"plant{plant}.csv", float_format="%.6g")
         out["plants"][plant] = {"summary": s, "inverters": json.loads(t.to_json(orient="index"))}
         print(f"\nplant {plant}: median slope {s['median_slope']:.2f}, "
-              f"{s['indistinguishable_from_median']}/22 CIs contain it; "
+              f"{s['indistinguishable_from_median']}/22 CIs contain it, "
+              f"{len(s['flagged_surviving_bonferroni'])} of the flagged survive Bonferroni "
+              f"(z {s['bonferroni_z']:.3f}): {s['flagged_surviving_bonferroni']}; "
               f"Spearman slope~robust {s['spearman_slope_vs_robust']:.3f}, "
               f"slope~sister {s['spearman_slope_vs_sister']:.3f}, "
               f"bottom-3 overlap {s['bottom3_overlap']}/3; "
@@ -161,7 +174,8 @@ def main() -> int:
               f"Spearman vs declared {cw['spearman_vs_declared']:.3f}")
         print(t[["counted", "missing", "availability", "availability_common_window",
                  "perf_slope", "perf_ci_low", "perf_ci_high",
-                 "ci_contains_plant_median", "robust_slope", "sister_sister_ratio"]].round(4))
+                 "ci_contains_plant_median", "bonferroni_contains_plant_median",
+                 "robust_slope", "sister_sister_ratio"]].round(4))
 
     (dest / "rank.json").write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8", newline="\n")
     p1, p2 = out["plants"][1]["summary"], out["plants"][2]["summary"]
@@ -175,7 +189,9 @@ def main() -> int:
           f"| {p1['spearman_slope_vs_sister']:.3f} / {p2['spearman_slope_vs_sister']:.3f} "
           f"| {p1['bottom3_overlap']} / {p2['bottom3_overlap']} "
           f"| {p1['common_window']['spearman_vs_declared']:.3f} / "
-          f"{p2['common_window']['spearman_vs_declared']:.3f} |")
+          f"{p2['common_window']['spearman_vs_declared']:.3f} "
+          f"| {22 - p1['indistinguishable_from_median']} ({len(p1['flagged_surviving_bonferroni'])}) / "
+          f"{22 - p2['indistinguishable_from_median']} ({len(p2['flagged_surviving_bonferroni'])}) |")
     return 0
 
 
