@@ -537,3 +537,23 @@ output: `runs/d4_r2split_<run>/r2_split.json`.
 | run | git SHA | dirty | script | daylight, zeros kept (declared) | daylight, producing | counted, zeros kept | counted, producing |
 |---|---|---|---|---|---|---|---|
 | 20261021T171435Z | `9153f89` | no | `scripts/r2_split_d4.py` | 0.9602 (38,376) / 0.4354 (38,722) | 0.9695 (36,823) / 0.8854 (32,022) | 0.9316 (30,718) / 0.1999 (28,818) | 0.9520 (30,655) / 0.8118 (25,044) |
+
+## D4 confounder runs
+
+Same ledger rules. Checks of what lies behind the per-inverter rankings, values Plant 1 / Plant 2;
+each describes structure in the data and none names a cause. Zero-output intervals are counted
+intervals (IRRADIATION ≥ 0.1 kW/m²) with AC_POWER = 0, with the number of stretches they form; each
+is classed by how many inverters with a counted row at that timestamp are at zero too (plant-wide:
+more than half; single: that inverter only; partial: in between), Plant 2 only. Near max is the
+median over inverters of the share of producing counted rows within 2% of that inverter's maximum
+AC_POWER; slope bend is the median over inverters of the slope on all producing counted rows over
+the slope below the plant's 90th percentile of irradiance. Night readings are timestamps before
+05:00 or from 19:00 with IRRADIATION > 0. The DC column is the Spearman agreement of a DC_POWER
+slope ranking with the AC_POWER one. The last column is the median over inverters of the standard
+error of "slope minus the mean slope of the other 21" from a pooled fit with Driscoll-Kraay errors
+(statsmodels), over the same standard error with the per-inverter Newey-West fits treated as
+independent. Full output: `runs/d4_conf_<run>/confounders.json`.
+
+| run | git SHA | dirty | script | zero-output intervals (stretches) | P2 zero intervals plant-wide / partial / single | near max | slope bend | night readings | Spearman DC vs AC slope | contrast SE, Driscoll-Kraay / independent |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20261021T180557Z | `9e0b4cd` | no | `scripts/confounders_d4.py` | 63 (15) / 3,774 (531) | 423 / 3,264 / 87 | 0.0007 / 0.0016 | 0.958 / 0.994 | 5 / 64 | 0.999 / 1.000 | 0.535 / 0.717 |
