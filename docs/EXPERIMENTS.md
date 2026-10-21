@@ -474,3 +474,16 @@ The `config` column carries `path#arm` for a config that declares several arms.
 | 20260827T210715Z_student-distilled_s0 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 0 | val | 30 | 26 s | **0.6036** | 0.7888 | 0.5013 |
 | 20260827T210715Z_student-distilled_s1 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 1 | val | 30 | 26 s | **0.5901** | 0.7821 | 0.5013 |
 | 20260827T210715Z_student-distilled_s2 | `82872a8` | no | `af8781b1` | `configs/cls_kd.yaml#student-distilled` | 2 | val | 30 | 26 s | **0.6023** | 0.7744 | 0.5013 |
+
+## D4 regression runs
+
+Same ledger rules as above (`git SHA` is HEAD when the run started, `dirty` is the tree at that
+moment), with the columns a regression needs instead of a classifier's. Each run fits
+AC_POWER on IRRADIATION, MODULE_TEMPERATURE and AMBIENT_TEMPERATURE per plant, values given as
+Plant 1 / Plant 2. R² is **in-sample**: nothing is held out, so it measures fit, not prediction.
+The diff columns are the largest absolute coefficient difference from `np.linalg.lstsq`, over both
+plants, daylight fit. Full output: `runs/ols_d4_<run>/fit.json`.
+
+| run | git SHA | dirty | script | daylight n | R² daylight | R² with night | normal eq. vs lstsq | grad. descent vs lstsq |
+|---|---|---|---|---|---|---|---|---|
+| 20261021T160204Z | `89aaa3e` | no | `scripts/ols_d4.py` | 38,376 / 38,722 | **0.9602** / **0.4354** | 0.9790 / 0.6136 | 2.6e-10 | 5.9e-06 |
