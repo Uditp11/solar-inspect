@@ -3,7 +3,7 @@
     python src/solar_inspect/classification/train.py configs/cls_baseline.yaml
 
 Evaluation is on **val**, hardcoded. The test split exists in the data object and
-is never read here. It is evaluated once, in Task 7, after the final config is
+is never read here. It is evaluated once, in the classification study, after the final config is
 committed -- a validation loop pointed at test burns that guarantee with no
 visible symptom, so the guarantee is enforced by there being no switch to flip.
 
@@ -203,7 +203,7 @@ def fit(cfg: dict, d, train_rows: torch.Tensor | None = None,
     `train_rows` overrides the train split, which is how the leakage control
     retrains with a subset of train removed.
 
-    Four optional keys drive Task 7's ablation, and **every one defaults to the
+    Four optional keys drive the classification study's ablation, and **every one defaults to the
     baseline's behaviour**, so a config written before they existed trains the
     identical model and ADR 0004's leakage-control numbers still reproduce here:
 

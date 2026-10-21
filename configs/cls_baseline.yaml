@@ -1,7 +1,7 @@
 # D1 classification baseline. Committed before it was evaluated.
 #
 # One config, one seed, plain cross-entropy, no class weighting, no focal loss,
-# no resampling, no pretrained backbone. This is the floor Task 7's ablation is
+# no resampling, no pretrained backbone. This is the floor the classification study's ablation is
 # measured against, and it is deliberately not an attempt at a good number --
 # starting the ablation early with one seed produces results with no noise floor.
 #

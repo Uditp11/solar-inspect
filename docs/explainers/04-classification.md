@@ -348,7 +348,7 @@ All three are pinned by hand-computed tests in `tests/test_cls_metrics.py`, and 
 distilled arm selects different epochs from the from-scratch arm — so the term is
 carrying real gradient weight, and the null result is a result.
 
-Task 6's confusion matrix predicted where soft targets should act if anywhere:
+The baseline run's confusion matrix predicted where soft targets should act if anywhere:
 **Cell ↔ Cell-Multi**, the largest off-diagonal pair, and exactly the kind of
 similarity structure "dark knowledge" is supposed to carry. It did not act. The
 distilled student moved 3.7 errors from one direction of the pair to the other and
@@ -368,7 +368,7 @@ median of 200. The levers that would make it a FLOP-bound measurement — INT8,
 structured pruning, ONNX Runtime or TensorRT, operator fusion, batch-1 on an
 embedded target — are exactly the ones this project has not pulled.
 
-### What was written by hand, and what was not
+### What is implemented here, and what is a library
 
 The confusion matrix, macro-F1, per-class recall and precision, class weights,
 focal loss, the KD loss, ECE and the near-duplicate search are written here and
@@ -378,15 +378,3 @@ hand-rolled one is wrong. `torch.nn` layers, `F.kl_div`, `F.cross_entropy`,
 torchvision's ResNet-18 and its ImageNet weights, and
 `scipy.optimize.minimize_scalar` for the temperature fit are libraries and are
 named as such. The full seam is in the README table, in the same wording.
-
----
-
-## What I'd say if asked
-
-*Udit writes this section by hand. Not drafted here.*
-
----
-
-## What I don't know yet
-
-*Udit writes this section by hand. Not drafted here.*

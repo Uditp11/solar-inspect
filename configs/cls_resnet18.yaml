@@ -21,7 +21,7 @@
 # that is the standard reason, and 3e-4 is the standard answer to it, taken as a
 # default rather than tuned. What that leaves unmeasured is whether the teacher
 # would be better still at some other LR. It would not change the teacher's role:
-# the KD comparison in Task 7 is against this teacher, whatever its ceiling.
+# the KD comparison in the classification study is against this teacher, whatever its ceiling.
 #
 # No layer freezing and no discriminative LRs: the whole network is fine-tuned at
 # one rate. 13,965 crops of 40x24 thermal render are far enough from ImageNet

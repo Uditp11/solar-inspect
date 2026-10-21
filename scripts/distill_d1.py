@@ -20,7 +20,7 @@ dispatch, so the number below is dominated by per-op overhead rather than by
 FLOPs. It is reported because the parameter ratio alone would imply a speedup that
 does not exist, and the honest version of "4x smaller" has to say what that buys.
 
-Task 6's confusion matrix predicts where KD should act if it acts anywhere:
+The baseline run's confusion matrix predicts where KD should act if it acts anywhere:
 Cell <-> Cell-Multi was the largest off-diagonal pair, and confusability between
 near-identical classes is exactly the structure soft targets are supposed to
 carry. That pair is reported separately. If KD does not help there, it is unlikely

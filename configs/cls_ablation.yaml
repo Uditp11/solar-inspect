@@ -27,7 +27,7 @@
 # ---------------------------------------------------------------------------
 # THE BUDGET, FIXED ONCE
 # ---------------------------------------------------------------------------
-# Identical across all four arms and all three seeds. Task 6 measured why it has
+# Identical across all four arms and all three seeds. The baseline run measured why it has
 # to be: at 30 epochs of constant LR train loss reached 0.14 while val macro-F1
 # plateaued and oscillated from about epoch 22 (0.5922 at epoch 27, 0.5378 at
 # epoch 28, on one seed). Each arm would overfit differently, and a comparison

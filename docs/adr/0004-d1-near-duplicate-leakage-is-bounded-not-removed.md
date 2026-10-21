@@ -93,7 +93,7 @@ It was available: the largest component is 133 images, 0.67% of the split. It wa
 on two grounds.
 
 **The size of the prize.** The whole-split effect is 0.005 macro-F1 against a seed spread
-of 0.012–0.019. By §7's own noise-floor rule that is not a result. Acting on it would mean
+of 0.012–0.019. By the project's noise-floor rule that is not a result. Acting on it would mean
 a third split hash and a third re-measurement of every baseline, converting a controlled
 causal experiment with a clean zero in its control arm into one line reading "I grouped
 near-duplicates."

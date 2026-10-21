@@ -5,7 +5,7 @@
 **This script reads the test split. Nothing else in the project does, and after
 this has run once, nothing does again.**
 
-The rule it enforces is non-negotiable #4: the config is committed and pushed
+The rule it enforces is the evaluate-once rule: the config is committed and pushed
 *before* the held-out split is read, so the model cannot have been chosen in
 response to its test number. That rule fails invisibly -- a config edited after
 the fact leaves no trace in the artifact -- so it is checked here rather than

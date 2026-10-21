@@ -8,8 +8,8 @@ single test evaluation, from that run's per-image predictions -- running it here
 would spend the one test evaluation on a diagnostic.
 
 **A. Class-matched accuracy.** Leaky val images against clean val images
-reweighted to the leaky class mix (see leakage.py). This is the comparison the
-brief asked for, and on its own it is *not sufficient*: matching on class does not
+reweighted to the leaky class mix (see leakage.py). This is the planned
+comparison, and on its own it is *not sufficient*: matching on class does not
 match on within-class difficulty, and a >= 0.98 cosine threshold preferentially
 selects the most prototypical crop of a class -- the fully-dark Offline-Module,
 the featureless No-Anomaly. Those are easier for any model, including one that has

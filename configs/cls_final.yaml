@@ -1,5 +1,5 @@
 # THE FINAL CLASSIFICATION CONFIG. Committed and pushed before the test split
-# was read, and never edited afterwards. That order is non-negotiable and it
+# was read, and never edited afterwards. That order is fixed and it
 # fails invisibly if it is broken, so scripts/eval_test_d1.py refuses to run
 # unless this file is tracked, unmodified, and contained in origin/main.
 #
@@ -19,7 +19,7 @@
 #
 # The teacher is ahead of the best from-scratch arm by 0.079 macro-F1, which is
 # four times the 0.02 noise floor declared before any of them ran. This is the
-# one comparison in Task 7 that is not close, and it is the reason the selection
+# one comparison in the classification study that is not close, and it is the reason the selection
 # needed no tie-break: among the four small-CNN arms nothing separated, and the
 # transfer-learning baseline separated from all of them.
 #

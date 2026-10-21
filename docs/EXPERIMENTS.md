@@ -1,7 +1,7 @@
 # Experiments
 
-**The history was rewritten on 2026-08-28 to remove automated co-author trailers from
-commit messages. Every SHA recorded here before that date was remapped to its new commit;
+**The history was rewritten on 2026-08-28 (commit messages only).
+Every SHA recorded here before that date was remapped to its new commit;
 trees, author dates and committer dates are unchanged, so the runs themselves are the same
 runs. A ledger that silently changed its own primary keys would be worse than one that
 says it did.**
@@ -39,7 +39,7 @@ selects the best val epoch. The per-arm standard deviations below say whether
 
 ## What the validation split is doing
 
-By the end of Task 7 `val` carries four jobs at once: **epoch selection** inside
+By the end of the classification study `val` carries four jobs at once: **epoch selection** inside
 every run, **config selection** between the ablation arms, the **temperature fit**
 for calibration, and the **leakage diagnostic** of ADR 0004. Each is a legitimate
 use of a validation split and together they are still not a test set -- but four
@@ -139,7 +139,7 @@ arms before any arm ran.
 | resnet18, fine-tuned | **0.6770 ± 0.0074** | 0.6735 · 0.6855 · 0.6719 | 13 · 28 · 17 | 0.832 | 11,176,396 |
 
 Against the best from-scratch arm (0.5980 ± 0.0085) that is **+0.079 macro-F1,
-four times the declared floor** — the one comparison in Task 7 that is not close.
+four times the declared floor** — the one comparison in the classification study that is not close.
 It is also a real teacher–student gap, which is what makes the distillation in
 `configs/cls_kd.yaml` a measurement rather than a ceremony. On the four smallest
 val classes it is ahead everywhere: Diode-Multi 0.785, Soiling 0.266,
@@ -188,7 +188,7 @@ The confusion matrix is in `runs/cls_final_test_20260827T205903Z/` as both a PNG
 and the raw counts in `manifest.json`. Its three largest off-diagonal cells:
 
 - **Cell-Multi → Cell, 51 of 194.** The largest single error in the matrix, and
-  the same pair Task 6's small CNN got wrong most often. Distinguishing one hot
+  the same pair the baseline run's small CNN got wrong most often. Distinguishing one hot
   cell from several is a counting problem at 40×24, and the model is not doing it.
 - **Shadowing → No-Anomaly, 37 of 158**, and **Offline-Module → No-Anomaly, 36 of
   124.** Both are misses of a real defect, which is the expensive direction: an
@@ -418,7 +418,7 @@ to say what the 4× actually bought.
 
 ### Where soft targets were supposed to act: Cell ↔ Cell-Multi
 
-Task 6's confusion matrix made this the prediction to check. Cell ↔ Cell-Multi is
+The baseline run's confusion matrix made this the prediction to check. Cell ↔ Cell-Multi is
 the largest off-diagonal pair in the project, and confusability between
 near-identical classes is precisely the structure "dark knowledge" is supposed to
 carry. Mean counts over the three seeds, on val:

@@ -426,7 +426,7 @@ they are spanned archives (`PV03.z01`…`PV03.z10` plus `PV03.zip`) that Python'
 - 645 image/mask pairs, 1,290 BMP files, in three rooftop subsets.
 - Images `256 × 256 × 3` RGB `uint8`; masks `256 × 256`, PIL mode `L`, single channel.
 
-### Mask class codes — the spec's list is wider than what PV01 contains
+### Mask class codes — the planned list is wider than what PV01 contains
 
 The distinct pixel values present across all 645 PV01 masks are exactly:
 
