@@ -71,6 +71,19 @@ def test_hac_matches_statsmodels(seed, lags):
     np.testing.assert_allclose(hac_cov(A, u, lags), ref, rtol=0, atol=1e-10)
 
 
+@pytest.mark.parametrize("lags", [1, 7])
+def test_hac_within_groups_matches_statsmodels_hac_panel(lags):
+    """Three series stacked one after another: lag products never cross a series boundary."""
+    X, y = ar1_data(600, 4)
+    groups = np.repeat([0, 1, 2], [150, 250, 200])
+    A = add_intercept(X)
+    u = y - A @ normal_equations(X, y)
+    ref = sm.OLS(y, A).fit(cov_type="hac-panel", cov_kwds={
+        "groups": groups, "maxlags": lags, "use_correction": False}).cov_params()
+    np.testing.assert_allclose(hac_cov(A, u, lags, groups=groups), ref, rtol=0, atol=1e-10)
+    assert np.abs(hac_cov(A, u, lags) - ref).max() > 1e-6   # the boundaries do matter
+
+
 def test_hac_lags_rule_of_thumb():
     # floor(4 (n/100)^(2/9)): 4·1 = 4; 4·10^(2/9) = 6.67; 4·32^(2/9) = 4·2^(10/9) = 8.64
     assert [newey_west_lags(n) for n in (100, 1000, 3200)] == [4, 6, 8]
