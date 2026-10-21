@@ -23,7 +23,7 @@ does not. scripts/near_dup_d1.py prints that table.
 
 **Why components and not pairs.** Three copies of one image are three pairs and
 one group. Deriving a dropped count from a pair count double-counts, which is how
-the same dedup produced two different totals in the previous session's report.
+the same dedup produced two different totals in an earlier report.
 
 Two rules over the components:
 
