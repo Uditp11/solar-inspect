@@ -18,6 +18,27 @@ seed: 0
 patience: 20
 device: 0
 
+# Augmentation — Ultralytics 8.4.129's defaults, written out unchanged so the training
+# run is fully declared here rather than inherited from whatever version is installed.
+# Classification-only (auto_augment, erasing) and segmentation-only (copy_paste) keys
+# are left out. D2 frames are greyscale replicated across RGB, so hue and saturation
+# jitter change nothing (a grey pixel has saturation 0) and only hsv_v acts.
+hsv_h: 0.015       # hue fraction
+hsv_s: 0.7         # saturation fraction
+hsv_v: 0.4         # value (brightness) fraction
+degrees: 0.0       # rotation, +/- degrees
+translate: 0.1     # translation, +/- fraction
+scale: 0.5         # scale gain, +/-
+shear: 0.0         # +/- degrees
+perspective: 0.0
+flipud: 0.0        # vertical flip probability
+fliplr: 0.5        # horizontal flip probability
+bgr: 0.0           # channel swap probability
+mosaic: 1.0        # mosaic probability
+close_mosaic: 10   # mosaic off for the final 10 epochs
+mixup: 0.0
+cutmix: 0.0
+
 # Inference / eval — applies to val, test and predict alike.
 max_det: 1000
 conf: 0.001    # low, so the PR curve is not truncated before AP is computed
