@@ -1,11 +1,9 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (22 Oct 2026): in progress.** Module 4 (classification) is finished. Module 5's
-> regression and per-inverter analysis on plant generation data is finished; its triage and
-> SQL layer is not built yet. Module 2 (detection) is in progress: IoU, NMS and AP@0.5 are
-> written from scratch, unit-tested and cross-checked against torchvision and torchmetrics, and a
-> first YOLOv8n fine-tune has been evaluated on val; there is no test number yet. Segmentation
-> and tracking are not built yet.
+> **Status (22 Oct 2026): in progress.** Module 4 (classification) and module 2 (detection) are
+> finished. Module 5's regression and per-inverter analysis on plant generation data is
+> finished; its triage and SQL layer is not built yet. Segmentation and tracking are not built
+> yet.
 
 The plan is four perception modules trained and benchmarked independently on public solar imagery,
 sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
@@ -90,10 +88,50 @@ smaller group and 87 a single inverter, concentrated at midday. The cleaning fin
 diagnostics, the confounders D4 can and cannot measure, and the IEC 61724 terms it lacks the
 inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
 
+## Results: module 2, detection
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D2 sections)
+with the commit and run it came from. Test is 63 images, 3,984 boxes, read once; each interval
+is a 95% percentile bootstrap over the 63 images (2,000 resamples) from that one pass's saved
+predictions. The operating confidence is 0.25, chosen on val.
+
+| Module | Data | Metric | Value | 95% interval | Split size |
+|---|---|---|---|---|---|
+| 2 · Detection | D2 | AP@0.5, 101-point, from scratch (= torchmetrics), YOLOv8n fine-tuned | **0.7552** | 0.6418 to 0.8438 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | AP@0.5:0.95, 101-point (= torchmetrics) | 0.5578 | 0.4675 to 0.6374 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | precision at conf 0.25, IoU 0.5 | 0.6025 | 0.4925 to 0.6872 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | recall at conf 0.25, IoU 0.5 | 0.7899 | 0.6969 to 0.8637 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | panel-count MAE at conf 0.25, panels per frame | 25.48 | 19.65 to 31.94 | 63 imgs, 3,984 boxes (test, once) |
+
+Beside the headline, on the same test pass: AP@0.5 **all-point 0.7571** (the area under the
+whole precision envelope, VOC style, rather than COCO's 101 samples of it), and **Ultralytics'
+own 0.7562** (it scores boxes before clipping them to the frame and integrates its curve with the
+trapezoid rule, both measured on val). The config ([`configs/det_yolo.yaml`](configs/det_yolo.yaml))
+was committed and pushed in [`83e51cb`](../../commit/83e51cb) before the test split was read, with
+the SHA-256 of the one checkpoint allowed to be evaluated;
+[`scripts/eval_test_det.py`](scripts/eval_test_det.py) refuses otherwise.
+
+- **Test is far below val.** The same model scores AP@0.5 0.9745, AP@0.5:0.95 0.8249 and a count
+  MAE of 1.88 on val (51 images, 4,929 boxes); the test intervals do not reach those values. Test
+  is a later sortie of the same flight, held out to measure this kind of shift (ADR 0002), and
+  val, which chose the epoch, the model and the operating point, turned out optimistic by that
+  much. On test the count error is mostly over-counting (+19.7 panels per frame on average). The
+  cause is not established.
+- **Tuning pass:** YOLOv8n against YOLOv8s, with and without brightness jitter, three seeds each,
+  under a rule declared before the first run. No arm beat the baseline by more than the noise floor
+  (0.010 in val AP@0.5:0.95), so the baseline YOLOv8n was kept.
+- **Operating point:** 0.25 has the lowest panel-count MAE on val (1.88). It did not transfer: on
+  test 0.5 has the lower count error (14.10), which is reported and not adopted.
+- **NMS sweep:** on val, count MAE runs from 3.49 at NMS IoU 0.3 to 1.88 at 0.7 and 3.41 at 0.8, but
+  without its one 584-panel frame it stays between 1.78 and 1.98 over the whole range. On that
+  frame's small panels the predicted boxes of neighbours overlap where the labels do not.
+
+**These numbers are not comparable to a published D2 number**: the published splits are
+contaminated and are not used (see [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md)).
+
 ## Not built yet
 
 - **1 · Segmentation (D3 PV01):** site-footprint IoU and Dice per rooftop subset, against a naive colour-threshold baseline.
-- **2 · Detection (D2), in progress:** the metrics are built and cross-checked, and a first YOLOv8n fine-tune has been evaluated on val. Still missing: the tuning pass (model size and brightness augmentation, three seeds each), the operating confidence, the NMS IoU sweep, and the single test evaluation that gives mAP@0.5 from my own implementation checked against torchmetrics, mAP@0.5:0.95, and per-image panel-count error on the 63-image test split.
 - **3 · Tracking (D5, synthetic):** MOTA, IDF1 and ID switches, and how many unique modules remain after deduplicating detections across frames.
 - **5 · Triage and SQL:** ordinal triage of findings and an SQL layer over the analytics. The regression and per-inverter half of module 5 is built (above).
 
@@ -101,20 +139,20 @@ inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analyti
 
 ## Scope: what this is and what it is not
 
-What has finished is module 4 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
+What has finished is module 4, module 2 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
 trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
 config was evaluated once on the held-out test split. Calibration, a base-rate correction
 and a distillation experiment followed, on val or on the saved outputs of that one test
 run. D2 and D3 were downloaded and prepared (D2 deduplicated and re-split, D3 counted per
-subset). On D2 a first YOLOv8n fine-tune has been trained and evaluated on val, with no test
-number yet; no model has been trained on D3.
+subset). On D2 a YOLOv8n fine-tune was selected on val and evaluated once on the held-out test
+sortie; no model has been trained on D3.
 
 Module 5's regression half ran on D4, real generation data from two plants: a plant-level
 fit with its diagnostics, and per-inverter availability and performance rankings.
 
-**It is not** a finished pipeline: detection has code but is not finished, and segmentation,
-tracking, triage and SQL have no code yet, so nothing runs end to end. Its numbers are not comparable to a published
-benchmark, because D1 ships no official split. It is not a temperature or power-loss
+**It is not** a finished pipeline: segmentation, tracking, triage and SQL have no code yet, so
+nothing runs end to end. Its numbers are not comparable to a published benchmark, because D1
+ships no official split and D2's published one is not used. It is not a temperature or power-loss
 measurement, because the imagery carries no radiometric data.
 
 ---
@@ -129,10 +167,10 @@ column is the planned cross-check.
 
 | Component | Status | Written by me | Library | Cross-checked against |
 |---|---|---|---|---|
-| IoU, NMS, mAP@0.5 | built | ✓ | none | torchmetrics (mAP@0.5, equal at 101 points on val); `torchvision.ops.nms` (NMS); hand-computed (IoU) |
+| IoU, NMS, mAP@0.5 | built | ✓ | none | torchmetrics (mAP@0.5, equal at 101 points on val and test); `torchvision.ops.nms` (NMS), and Ultralytics' NMS on the detector's own boxes (equal counts on all 51 val images); hand-computed (IoU) |
 | mAP@0.5:0.95 | built | | torchmetrics | the from-scratch AP averaged over ten IoU thresholds |
 | U-Net | planned | ✓ (`nn.Conv2d` etc.) | none | |
-| Detector | planned | | Ultralytics YOLOv8 | |
+| Detector | built | | Ultralytics YOLOv8 | Ultralytics' own mAP (gap measured: unclipped boxes, trapezoid rule) |
 | Kalman filter | planned | ✓ | none | analytic 2-step test |
 | Assignment | planned | | `scipy.optimize.linear_sum_assignment` | |
 | MOTA/IDF1 | planned | | motmetrics | |
@@ -206,6 +244,31 @@ base-rate correction to 2.2% field prevalence and a distillation run came after.
 is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/04-classification.md`](docs/explainers/04-classification.md).
 
+### 2 · Detection (finished)
+
+Panel detection on D2, 640 x 512 thermal frames from one drone flight. YOLOv8n, fine-tuned with
+Ultralytics on the training sorties and selected on the val sortie; IoU, greedy NMS, AP at one IoU
+threshold (all-point and 101-point) and AP@0.5:0.95 are written from scratch, unit-tested against
+hand-computed values and cross-checked against torchvision and torchmetrics. A tuning pass (two
+model sizes, brightness jitter on or off, three seeds each) ran under a selection rule declared
+before it started; the operating confidence and an NMS IoU sweep were measured on val; the config,
+with the hash of the one checkpoint allowed, was pushed before the test sortie was read once.
+
+D2's published splits are not used. 353 published files are only 252 unique images, and 34 of
+the 35 published test images are byte-identical to a train or val image. The split here is
+deduplicated by content hash and grouped by acquisition sortie: **138 / 51 / 63 images, 10,612 /
+4,929 / 3,984 boxes**. See [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md).
+
+`max_det` is set to **3000** in [`configs/det_yolo.yaml`](configs/det_yolo.yaml), not
+Ultralytics' default of 300. Eight of the 252 unique frames carry more than 300 boxes
+(max 584) and three of those land in the test split, so the default would have silently
+truncated 3.2% of frames. Per-image panel-count error, the domain metric, would then
+have been wrong with no error message anywhere. 1000 was not enough either: the densest
+val frame (584 boxes) returned exactly 1,000 detections with the cap at 1000.
+
+Every run is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/02-detection.md`](docs/explainers/02-detection.md).
+
 ### 5 · Analytics on plant generation data (regression half finished)
 
 AC power regressed on the weather columns per plant, solved two ways from scratch (normal
@@ -239,20 +302,6 @@ figure would make the null model look uniformly mediocre when on Brick it is dec
 strong and on SteelTile it is worse than a coin flip, because the positive class is the
 majority there.
 
-**2 · Detection.** D2's published splits are not used. 353 published files are only 252
-unique images, and 34 of the 35 published test images are byte-identical to a train or val
-image. The split here is deduplicated by content hash and grouped by acquisition sortie:
-**138 / 51 / 63 images, 10,612 / 4,929 / 3,984 boxes**. See
-[ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md). Because this is not the published
-split, **no detection number from it will be comparable to a published number on D2.**
-
-`max_det` is set to **3000** in [`configs/det_yolo.yaml`](configs/det_yolo.yaml), not
-Ultralytics' default of 300. Eight of the 252 unique frames carry more than 300 boxes
-(max 584) and three of those land in the test split, so the default would have silently
-truncated 3.2% of frames. Per-image panel-count error, the domain metric, would then
-have been wrong with no error message anywhere. 1000 was not enough either: the densest
-val frame (584 boxes) returned exactly 1,000 detections with the cap at 1000.
-
 ---
 
 ## Tests
@@ -261,11 +310,12 @@ val frame (584 boxes) returned exactly 1,000 detections with the cap at 1000.
 python -m pytest
 ```
 
-Run on 22 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **113 passed**, 7 deprecation
-warnings from torch and pycocotools, in 40 s. No test needs a GPU. Three D4 tests read the
+Run on 22 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **118 passed**, 7 deprecation
+warnings from torch and pycocotools, in 7 s. No test needs a GPU. Three D4 tests read the
 real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
 dataset. They cover the classification maths, the detection metrics (IoU, NMS, AP at one and
-at ten IoU thresholds, panel-count error) and the tuning pass's selection rule, the analytics
+at ten IoU thresholds, panel-count error), the tuning pass's selection rule and the
+checkpoint-hash guard on the test evaluation, the analytics
 primitives (OLS, covariance, Durbin-Watson, VIF, availability, sister ratio, zero-output
 stretches), checked against hand-computed values and against torchvision and statsmodels
 where they compute the same definition, and the `Finding` contract's mask encoding. The
@@ -282,7 +332,12 @@ torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every e
 - Compute a performance ratio or specific yield (kWh/kWp) for D4. It needs nameplate DC capacity per inverter and plane-of-array irradiance, and D4 has neither, so the per-inverter slope cannot tell a weak inverter from a smaller array, and the DC/AC ratio is not measurable.
 - Identify a cause for any underperforming inverter. The confounders are measured as patterns or stated as not measurable; 34 days cannot separate a fault from a season.
 - Separate partial output from the main power curve in the slope fits. Plant 2's producing intervals include some well below the line, and they pull its slopes down.
-- Build modules 1 and 3, finish module 2 (in progress), or build module 5's triage and SQL layer. See "Not built yet" above.
+- Detect oriented boxes. Panels are labelled and detected with axis-aligned boxes, so rows that cross the frame diagonally give neighbouring boxes that overlap; the oriented-box formulation (x, y, w, h, θ) is not tried.
+- Train a second detector family. Only YOLOv8 (n and s) was fine-tuned; no two-stage or NMS-free (DETR-style) detector was compared.
+- Test on more than one flight. D2 is one drone flight on one day with one 640 x 512 thermal camera; the test sortie is a later part of that same flight.
+- Use RGB. The detector sees only the rendered thermal frames; no visible-light imagery is fused.
+- Write anchor assignment. YOLOv8 is anchor-free (its task-aligned assigner replaced anchor matching), so the historical anchor-matching step was not implemented.
+- Build modules 1 and 3, or module 5's triage and SQL layer. See "Not built yet" above.
 
 ---
 
