@@ -51,7 +51,7 @@ def evaluate(weights: Path, split: str, cfg: dict, project: Path, name: str) -> 
     scores = [np.array([r["score"] for r in by[n]], dtype=float) for n in names]
 
     sc, tp, n_gt = match(boxes, scores, gts)
-    tm = torchmetrics_map(boxes, scores, gts)
+    tm = torchmetrics_map(boxes, scores, gts, max_det=cfg["max_det"])
     out = {
         "split": split, "images": len(names), "boxes": n_gt,
         "detections": int(sum(map(len, scores))),
