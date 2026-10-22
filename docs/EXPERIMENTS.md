@@ -836,3 +836,42 @@ differ by up to a factor of three within an arm.
 **Peak memory:** the yolov8s runs peaked at up to 7,096 MiB reserved, about 1,200 MiB above the
 2-epoch batch check (5,862 MiB), as the yolov8n full run had done relative to its smoke. No run ran
 out of memory; 8,188 MiB is the card's total.
+
+## Detection operating confidence, on val
+
+Declaration item 6, first half. `scripts/operating_point_det.py` on the selected model's val
+evaluation `det_val_20261022T163802Z` (checkpoint `det_20261022T163213Z`, the tuning pass's selected seed-0 run), no new
+inference: the boxes of the pass at conf 0.001, NMS IoU 0.7, `max_det` 3000 (largest frame 1,257
+detections, so no frame was truncated) filtered by score at each grid value. Run
+`det_oppoint_20261022T193813Z`, from `21a945a`, clean tree. Figure (count MAE and signed mean against
+confidence): `runs/det_oppoint_20261022T193813Z/count_error_vs_conf.png`. Val, 51 images, 4,929
+boxes; precision and recall at IoU 0.5; signed error is predicted minus ground-truth count.
+
+| conf (val, 51 images, 4,929 boxes) | count MAE | signed mean | signed min, max | precision | recall |
+|---|---|---|---|---|---|
+| 0.05 | 6.373 | +6.255 | -2, +187 | 0.9162 | 0.9755 |
+| 0.10 | 3.843 | +3.294 | -3, +116 | 0.9400 | 0.9720 |
+| 0.15 | 2.824 | +1.569 | -6, +68 | 0.9543 | 0.9698 |
+| 0.20 | 2.039 | +0.039 | -7, +20 | 0.9649 | 0.9653 |
+| **0.25** | **1.882** | -0.980 | -11, +6 | 0.9703 | 0.9604 |
+| 0.30 | 2.431 | -1.647 | -23, +6 | 0.9742 | 0.9576 |
+| 0.35 | 3.137 | -2.392 | -45, +5 | 0.9782 | 0.9539 |
+| 0.40 | 4.000 | -3.333 | -74, +4 | 0.9813 | 0.9475 |
+| 0.45 | 4.843 | -4.333 | -104, +2 | 0.9860 | 0.9418 |
+| 0.50 | 5.608 | -5.216 | -130, +2 | 0.9893 | 0.9359 |
+| 0.55 | 6.745 | -6.510 | -167, +2 | 0.9924 | 0.9255 |
+| 0.60 | 8.176 | -8.020 | -218, +1 | 0.9960 | 0.9134 |
+| 0.65 | 9.902 | -9.863 | -272, +1 | 0.9966 | 0.8949 |
+| 0.70 | 11.647 | -11.647 | -317, 0 | 0.9972 | 0.8771 |
+| 0.75 | 14.647 | -14.647 | -378, 0 | 0.9978 | 0.8466 |
+| 0.80 | 19.314 | -19.314 | -430, -1 | 0.9980 | 0.7985 |
+| 0.85 | 31.941 | -31.941 | -485, -2 | 0.9991 | 0.6689 |
+| 0.90 | 59.706 | -59.706 | -544, -5 | 1.0000 | 0.3822 |
+| 0.95 | 94.275 | -94.275 | -582, -12 | 1.0000 | 0.0245 |
+
+**Operating confidence 0.25**, the unique minimum of count MAE (no tie). The rows at 0.10, 0.25 and
+0.50 equal the evaluation's own at-confidence block. Over-counting below it, under-counting above
+it. The extremes away from 0.25 are the 584-box frame `DJI_20230213154730_0155` (+187 at 0.05, -130
+at 0.50); at 0.25 the worst frame is 11 short of 212. The curve is flat between 0.20 and 0.25 in MAE (2.04, 1.88) but not in sign: 0.20 is
+unbiased on average (+0.04), 0.25 slightly under (-0.98). The rule picks on MAE alone, as declared.
+Chosen on val, which has now also selected the epoch and the arm.
