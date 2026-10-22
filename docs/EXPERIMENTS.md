@@ -560,3 +560,29 @@ independent. Full output: `runs/d4_conf_<run>/confounders.json`.
 | run | git SHA | dirty | script | zero-output intervals (stretches) | P2 zero intervals plant-wide / partial / single | near max | slope bend | night readings | Spearman DC vs AC slope | contrast SE, Driscoll-Kraay / independent |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 20261021T180557Z | `9e0b4cd` | no | `scripts/confounders_d4.py` | 63 (15) / 3,774 (531) | 423 / 3,264 / 87 | 0.0007 / 0.0016 | 0.958 / 0.994 | 5 / 64 | 0.999 / 1.000 | 0.535 / 0.717 |
+
+## D2 AP@0.5 cross-check on synthetic boxes
+
+Same ledger rules. No model and no D2 data: seeded synthetic frames (a metric test fixture
+described in `scripts/crosscheck_ap.py`, 40 frames per seed, 0 to 600 ground-truth boxes each,
+placed at random so ground truths overlap one another, unlike tiled panels). From-scratch AP@0.5
+(`src/solar_inspect/detection/ap.py`) against torchmetrics 1.9.0 / pycocotools 2.0.11 AP@0.5 at
+1000 detections per image. "Controlled" removes three differences from the from-scratch side's
+inputs: score ties broken into unique ranks (the order of equal scores is
+implementation-defined), boxes rounded as torchmetrics hands them to pycocotools (float32 x, y,
+w, h), and ground truths reversed per image (on an exact IoU tie between two ground truths
+pycocotools keeps the last, `ap.match` the first). Run from `34c508b`, clean tree.
+
+| seed | ground truths | detections | all-point | 101-point | torchmetrics | 101-point minus torchmetrics, raw | controlled |
+|---|---|---|---|---|---|---|---|
+| 0 | 14,589 | 16,632 | 0.752867 | 0.753324 | 0.753404 | -8.0e-05 | 0 |
+| 1 | 14,225 | 16,191 | 0.760882 | 0.759263 | 0.759094 | +1.7e-04 | +4.1e-06 |
+| 2 | 10,882 | 12,345 | 0.749159 | 0.748431 | 0.748529 | -9.8e-05 | 0 |
+| 3 | 11,030 | 12,554 | 0.752369 | 0.747151 | 0.747327 | -1.8e-04 | +3.9e-07 |
+| 4 | 12,971 | 14,706 | 0.753961 | 0.749804 | 0.749630 | +1.7e-04 | 0 |
+
+**Unresolved:** the controlled residual of 4.1e-06 (seed 1) and 3.9e-07 (seed 3). Per-image TP
+counts agree exactly on every frame of both seeds, so it sits in the global accumulation; it is
+not pycocotools' epsilon in the precision denominator, not float32 summation of the precision
+tensor, and not frames without ground truth (there are none). Left at that after about 15
+minutes of a 60-minute reconciliation budget.
