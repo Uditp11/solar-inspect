@@ -28,6 +28,10 @@ non-increasing in rank), and then:
 
 No detections gives AP 0. No ground truth anywhere leaves AP undefined, and NaN is
 returned.
+
+`mean_ap` averages the 101-point AP over IoU thresholds, by default COCO's ten,
+0.50 to 0.95 in steps of 0.05, which is AP@0.5:0.95. Each threshold is matched
+afresh, so a detection can be a true positive at 0.5 and a false positive at 0.75.
 """
 from __future__ import annotations
 
@@ -83,3 +87,14 @@ def average_precision(det_boxes, det_scores, gt_boxes, iou_thr: float = 0.5,
                       method: str = "all") -> float:
     _, tp, n_gt = match(det_boxes, det_scores, gt_boxes, iou_thr)
     return ap_from_matches(tp, n_gt, method)
+
+
+# 0.50, 0.55, ..., 0.95, as pycocotools defines them
+COCO_IOU_THRESHOLDS = tuple(np.linspace(0.5, 0.95, 10))
+
+
+def mean_ap(det_boxes, det_scores, gt_boxes, thresholds=COCO_IOU_THRESHOLDS) -> float:
+    """101-point AP from `match` at each IoU threshold, averaged: AP@0.5:0.95 with the
+    default thresholds."""
+    return float(np.mean([average_precision(det_boxes, det_scores, gt_boxes, t, "101")
+                          for t in thresholds]))

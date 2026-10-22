@@ -34,7 +34,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from solar_inspect.detection.ap import average_precision, match
+from solar_inspect.detection.ap import COCO_IOU_THRESHOLDS, average_precision, match, mean_ap
 
 A_GT = np.array([[0, 0, 10, 10], [20, 0, 30, 10]], dtype=float)
 B_GT = np.array([[0, 0, 10, 10]], dtype=float)
@@ -134,3 +134,21 @@ def test_no_detections_at_all_is_zero():
 def test_unknown_method_is_refused():
     with pytest.raises(ValueError):
         average_precision(*TOY, method="11")
+
+
+def test_mean_ap_averages_the_101_point_ap_over_iou_thresholds():
+    # one image, g1 = [0,0,10,10], g2 = [20,0,30,10]
+    # d1 [0,0,10,10] 0.9: IoU 1 with g1
+    # d2 [20,0,30,6] 0.8: inter 60, union 100 -> IoU 0.6 with g2
+    # at 0.5:  TP, TP -> precision 1, 1; recall 1/2, 1 -> 101-point AP 1
+    # at 0.75: TP, FP -> precision 1, 1/2; recall 1/2, 1/2; envelope 1, 1/2
+    #          r = 0 .. 0.50 (51 points) at 1, recall never reaches 0.51 .. 1 -> 51/101
+    # mean over the two thresholds: (1 + 51/101) / 2 = 76/101
+    gt = [np.array([[0, 0, 10, 10], [20, 0, 30, 10]], dtype=float)]
+    det = [np.array([[0, 0, 10, 10], [20, 0, 30, 6]], dtype=float)]
+    sc = [np.array([0.9, 0.8])]
+    assert mean_ap(det, sc, gt, thresholds=(0.5, 0.75)) == pytest.approx(76 / 101)
+
+
+def test_coco_iou_thresholds_are_the_ten_from_one_half_to_0_95():
+    assert np.allclose(COCO_IOU_THRESHOLDS, [0.5 + 0.05 * k for k in range(10)])
