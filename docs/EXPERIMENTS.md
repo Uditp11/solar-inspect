@@ -1290,3 +1290,76 @@ No matching against ground truth is done, so these are counts, not accuracy.
 - no tracker: 600 frames, 11874 detections, 11874 ids, vs 294 true modules
 - greedy IoU: 600 frames, 11874 detections, 654 ids, vs 294 true modules (1,016 tracks started)
 - SORT: 600 frames, 11874 detections, 660 ids, vs 294 true modules (1,075 tracks started)
+
+## D5 tracking metrics and sweep, declared before the first metric ran
+
+Fri 23 Oct 2026. Written and committed before any tracking metric has been computed on any D5
+sequence, development or held-out. Code: `src/solar_inspect/tracking/metrics.py` (tests first, on
+hand-made sequences).
+
+**MOTA and IDF1 here are correctness checks of the implementation on synthetic data, never a
+performance result.** D5 is a window moving over one still frame; the numbers say whether the
+trackers and the metric code behave as designed, not how a tracker would do on a real flyover.
+
+### Metrics
+
+- **Hypotheses.** Per frame, the detections a tracker reports an id for. A detection whose track is
+  not yet reported (id -1) is not a hypothesis. For no tracker every detection is a hypothesis.
+- **Ground truth.** The generator's visible boxes: at least 50% of the panel's warped area inside the
+  window and not under the band.
+- **Ignore boxes.** Every other labelled panel with any part of its warped area inside the window:
+  under 50% inside the window, or under the band. Its box is the same clipped hull the generator uses
+  for visible boxes, recomputed from the cached per-frame homography, the cached band and the val
+  label boxes with the generator's own functions (the generator is not changed).
+- **Ignore rule.** Before a frame is scored, every hypothesis whose IoU with every visible box is
+  below 0.5 and whose IoU with some ignore box is at least 0.5 is dropped. A hypothesis that reaches
+  0.5 with a visible box is kept, whatever it does with ignore boxes. Ignore boxes are never misses.
+  The number of hypotheses dropped is reported per tracker.
+- **Matching (motmetrics, library).** `MOTAccumulator`, CLEAR MOT matching: per frame, a ground-truth
+  box first keeps the hypothesis it was last matched to if their IoU is still at least 0.5; the rest
+  are paired by minimum-cost assignment (scipy) on 1 - IoU, pairs above distance 0.5 not allowed.
+  Distances are `motmetrics.distances.boxiou` on (x, y, w, h) with `iou_matrix`'s rule written out
+  (1 - IoU, NaN above 0.5): `iou_matrix` itself calls `np.asfarray`, which NumPy 2 removed.
+- **motmetrics metrics:** MOTA, IDF1, IDSW (`num_switches`), FP, FN, per sequence and over sequences
+  (`compute_many(..., generate_overall=True)`, which sums the counts before dividing).
+- **Hand-written IDSW** (`id_switches`): the same CLEAR MOT matching written out (scipy does the
+  assignment step), then, for each ground-truth id, a walk over the frames where it is matched; a
+  switch is each time its matched track id differs from the last one it was matched to. It must equal
+  motmetrics' `num_switches` on every sequence; if it does not, the reconciliation is timeboxed at 45
+  minutes and logged here as unresolved.
+- **Unique-module count** (`count_error`, hand-written): K = distinct reported track ids with at
+  least one hypothesis left after the ignore rule; G = distinct ground-truth ids visible at least
+  once. Reported: K, G, K - G and (K - G) / G. The dedup line: "N frames, M detections, K ids, vs G
+  true modules", M = all detections.
+
+### Tracker settings, chosen on the development seeds only
+
+For SORT and greedy IoU separately: every combination of `max_age` in {1, 3, 5, 10, 15}, `min_hits`
+in {1, 3}, `iou_gate` in {0.1, 0.3, 0.5} (30 settings) is run on development seeds 0 to 9. The chosen
+setting has the lowest sum over the 10 seeds of |K - G|; ties go to the higher sum of per-seed IDF1,
+then to the smaller `max_age`, then (reached only by settings with identical scores) to the smaller
+`min_hits` and then the smaller `iou_gate`. No setting is tuned on a held-out seed. The no-tracker floor has no
+settings. The full grid and both choices are recorded here and the choices committed in a config
+before any held-out sequence is scored.
+
+### The held-out sweep, seeds 100 to 119, one factor at a time
+
+Defaults: pan speed 4 px per frame, occlusion 10 frames, detector confidence 0.25 (the shipped
+`conf_operating`), each tracker at its chosen setting. One factor varies, the others stay at default:
+
+| factor | values | how |
+|---|---|---|
+| pan speed (px per frame) | 2, 4, 6, 8 | sequences regenerated, same seeds; bounces recorded per sequence |
+| occlusion length (frames) | 5, 10, 15 | sequences regenerated, same seeds |
+| detector confidence | 0.1, 0.25, 0.5 | detector re-run on the default sequences |
+| `max_age` | 1, 5, 15 | SORT and greedy; the rest of each tracker's chosen setting |
+| `iou_gate` | 0.1, 0.3, 0.5 | SORT and greedy; the rest of each tracker's chosen setting |
+
+The default cells reuse run `flyover_20261022T221314Z`. Every regeneration runs
+`scripts/make_flyover.py` with the committed generator and detector, the one overridden parameter
+given on the command line and recorded in the new run's manifest.
+
+Per cell and tracker (no tracker, greedy IoU, SORT), summed over the 20 sequences: MOTA, IDF1, IDSW
+(hand-written, motmetrics' beside it), FP, FN, K, G, K - G, hypotheses dropped by the ignore rule,
+bounces (pan-speed rows), and the per-sequence median and range of (K - G) / G. Where greedy and SORT
+give the same numbers, that is stated. Headline at defaults, held-out: the dedup line per tracker.
