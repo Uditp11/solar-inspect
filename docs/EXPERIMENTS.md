@@ -1230,3 +1230,63 @@ Reading, from these numbers only: test's drop is concentrated in frames whose ro
 steeply, a geometry no training frame has and whose large boxes are rare in train. That is consistent
 with a change in row orientation relative to the camera between sorties, and not separable from the
 neighbour overlap that comes with it. The remaining gap on the other 41 frames is not explained here.
+
+## D5 flyover and trackers: build
+
+Fri 23 Oct 2026. Code: box Kalman filter [`f4722ab`](../../../commit/f4722ab),
+[`97b7e66`](../../../commit/97b7e66), [`a8844cb`](../../../commit/a8844cb); SORT, greedy IoU and
+no tracker [`8b848bb`](../../../commit/8b848bb); generator [`4afc1ab`](../../../commit/4afc1ab);
+`configs/flyover.yaml` [`5a1d4b6`](../../../commit/5a1d4b6), committed before any sequence was
+generated; `scripts/make_flyover.py` [`051e111`](../../../commit/051e111);
+`scripts/dedup_flyover.py` [`378ecbe`](../../../commit/378ecbe).
+
+**D5 is synthetic.** Each sequence is a 320 x 256 window moving for 60 frames over one D2 val frame
+(random-walk velocity reflecting off the frame bounds, yaw ramp 0.15 deg per frame, scale ramp
+across [0.85, 1.15]), with an opaque band drifting over the ground to occlude panels. Detections are
+the shipped detector's (checkpoint SHA-256 `1bd7908cc646...`, conf 0.25, NMS IoU 0.7, max_det 3000,
+imgsz 320 so the window is seen at the trained pixel scale). Development seeds 0-9 and held-out
+seeds 100-119 use 30 different val frames.
+
+Run `flyover_20261022T221314Z` at `051e111`, clean tree, 30 sequences in 19 s. A first run of the
+same code before its commit gave byte-identical arrays for all 30, detections included.
+
+Checks on the development sequences:
+
+- Visible fractions (share of a panel's warped area inside the window and not under the band)
+  against a 4x supersampled pixel mask, seeds 0 and 2, 930 panel-frames: largest difference 0.022 of
+  the panel's area.
+- Detection boxes against ground-truth boxes: median centre offset (-0.11, +0.20) px; 99.7% of the
+  7,320 visible ground-truth boxes have a detection at IoU >= 0.5.
+- 11,874 detections against 7,320 visible ground-truth boxes. 61.9% of detections overlap a visible
+  ground-truth box at IoU >= 0.5 and 88.7% overlap the hull of some labelled panel in the window,
+  visible or not: most of the excess is real panels that the 50% visibility rule leaves out of the
+  ground truth (less than half inside the window, or half under the band), plus duplicates. Against
+  visible-only ground truth those count as false positives.
+- Occlusion: 706 runs over all 30 sequences, 84.8% of 5 to 15 frames, 380 of exactly 10 (the
+  configured length); the shorter runs are panels that are also leaving the window. 13 panels on
+  development seeds are occluded at every frame they are inside the window and so never visible.
+
+| dev seed | labels in source | GT boxes | true modules | detections | bounces |
+|---|---|---|---|---|---|
+| 0 | 48 | 379 | 16 | 874 | 2 |
+| 1 | 105 | 915 | 38 | 1,418 | 3 |
+| 2 | 97 | 908 | 38 | 1,462 | 2 |
+| 3 | 111 | 917 | 46 | 1,414 | 2 |
+| 4 | 87 | 987 | 35 | 1,419 | 1 |
+| 5 | 27 | 47 | 4 | 176 | 2 |
+| 6 | 77 | 1,081 | 43 | 1,687 | 2 |
+| 7 | 90 | 704 | 23 | 1,146 | 0 |
+| 8 | 44 | 470 | 16 | 906 | 2 |
+| 9 | 82 | 912 | 35 | 1,372 | 2 |
+
+Seed 5's window stays over trees beside the corner of a panel block, so it has few visible panels.
+The held-out sequences are generated and cached, and not scored.
+
+Raw deduplication count, `scripts/dedup_flyover.py` at `378ecbe`, each tracker at its defaults
+(max_age 1, min_hits 3, IoU gate 0.3), **development seeds, before any metric code**. Ids are the
+distinct reported track ids; true modules are the distinct ground-truth ids visible at least once.
+No matching against ground truth is done, so these are counts, not accuracy.
+
+- no tracker: 600 frames, 11874 detections, 11874 ids, vs 294 true modules
+- greedy IoU: 600 frames, 11874 detections, 654 ids, vs 294 true modules (1,016 tracks started)
+- SORT: 600 frames, 11874 detections, 660 ids, vs 294 true modules (1,075 tracks started)
