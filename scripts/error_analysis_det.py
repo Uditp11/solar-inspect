@@ -28,7 +28,10 @@ config's `conf_operating`, 0.25), with true and false positives from `ap.match` 
    (8-bit rendered DN, uncalibrated, within one frame). Then, on test and on val, the
    Spearman correlation of per-frame AP@0.5 and signed count error with five frame
    properties, all ten reported; "clear" is declared as p < 0.005 (0.05 over the ten
-   correlations of a split).
+   correlations of a split). The steep tail: share of boxes with aspect ratio w/h below
+   1.0 and below `STEEP_ASPECT` (1.1), frames whose median box is that steep, labels by
+   steepness and area tercile, and on test and val the evaluation's numbers on steep
+   frames and on the rest, with the miss rate in each steepness and size cell.
 4. Overlays of the 6 test and 2 val frames with the largest absolute count error, a
    contact sheet, and a per-frame CSV of the test frames.
 
@@ -62,6 +65,11 @@ FP_CLASSES = ("duplicate", "localisation", "background", "unclassified")
 EDGE_PX = 1.0
 NEIGHBOUR_IOU = 0.3
 CLEAR_P = 0.005
+# A box is steep when its aspect ratio w/h is below this, and a frame is steep when the median
+# of its boxes' aspect ratios is. Rows crossing the frame steeply give axis-aligned boxes taller
+# than wide; 1.1 is the value the overlays of the first run suggested, fixed before this was
+# measured and not tuned on the result.
+STEEP_ASPECT = 1.1
 OVERLAYS = {"test": 6, "val": 2}
 COLOURS = {"gt": (0, 200, 0), "tp": (40, 110, 255), "duplicate": (255, 140, 0),
            "localisation": (255, 230, 0), "background": (230, 0, 0),
@@ -140,12 +148,23 @@ def q(x) -> list[float]:
     return [float(v) for v in np.nanpercentile(x, [50, 25, 75])]
 
 
-def label_stats(fp: dict) -> dict:
+def label_stats(fp: dict, tercile_edges) -> dict:
     wh = np.concatenate(fp["wh"])
     nn = np.concatenate(fp["nn"])
     n = np.array([len(g) for g in fp["gts"]])
     frame_nn = np.array([np.nanmedian(v) if np.isfinite(v).any() else np.nan for v in fp["nn"]])
+    aspect = wh[:, 0] / wh[:, 1]
+    steep = aspect < STEEP_ASPECT
+    ter = np.digitize(wh[:, 0] * wh[:, 1], tercile_edges)
+    frame_aspect = np.array([np.median(w[:, 0] / w[:, 1]) for w in fp["wh"] if len(w)])
     return {
+        "share_aspect_below_1.0": float((aspect < 1.0).mean()),
+        f"share_aspect_below_{STEEP_ASPECT}": float(steep.mean()),
+        "steep_frames": [int((frame_aspect < STEEP_ASPECT).sum()), len(frame_aspect)],
+        "frame_median_aspect_min": float(frame_aspect.min()),
+        "boxes_by_steep_and_area_tercile": {
+            "steep": [int((steep & (ter == t)).sum()) for t in range(3)],
+            "not_steep": [int((~steep & (ter == t)).sum()) for t in range(3)]},
         "frames": len(n), "boxes": int(n.sum()),
         "width_px": q(wh[:, 0]), "height_px": q(wh[:, 1]), "area_px": q(wh[:, 0] * wh[:, 1]),
         "aspect_w_over_h": q(wh[:, 0] / wh[:, 1]),
@@ -189,9 +208,11 @@ def analyse(eval_dir: Path, fp: dict, conf: float, tercile_edges) -> dict:
                 | (miss[:, 2] >= W - EDGE_PX) | (miss[:, 3] >= H - EDGE_PX))
         all_edge = ((g[:, 0] <= EDGE_PX) | (g[:, 1] <= EDGE_PX)
                     | (g[:, 2] >= W - EDGE_PX) | (g[:, 3] >= H - EDGE_PX))
-        fns.append({"best_iou": best, "edge": edge, "tercile": np.digitize(area(miss), tercile_edges),
-                    "gt_tercile": np.digitize(area(g), tercile_edges), "gt_edge": all_edge})
         wh = fp["wh"][i]
+        fns.append({"best_iou": best, "edge": edge, "tercile": np.digitize(area(miss), tercile_edges),
+                    "gt_tercile": np.digitize(area(g), tercile_edges), "gt_edge": all_edge,
+                    "steep": wh[~taken, 0] / wh[~taken, 1] < STEEP_ASPECT,
+                    "gt_steep": wh[:, 0] / wh[:, 1] < STEEP_ASPECT})
         rows.append({
             "image": names[i], "labelled": len(g), "counted": int(keep.sum()),
             "signed_error": int(keep.sum()) - len(g), "tp": int(tp.sum()),
@@ -227,6 +248,28 @@ def analyse(eval_dir: Path, fp: dict, conf: float, tercile_edges) -> dict:
     ter = np.concatenate([f["tercile"] for f in fns])
     gt_ter = np.concatenate([f["gt_tercile"] for f in fns])
     gt_edge = np.concatenate([f["gt_edge"] for f in fns])
+    steep = np.concatenate([f["steep"] for f in fns])
+    gt_steep = np.concatenate([f["gt_steep"] for f in fns])
+
+    def group(idx: list[int]) -> dict:
+        """The evaluation's numbers over a subset of frames, AP pooled over those frames."""
+        if not idx:
+            return {"frames": 0}
+        _, t, k = match([boxes[i] for i in idx], [scores[i] for i in idx], [gts[i] for i in idx])
+        r = [rows[i] for i in idx]
+        s = np.array([x["signed_error"] for x in r])
+        return {"frames": len(idx), "labelled": k, "ap50_101_point": ap_from_matches(t, k, "101"),
+                "precision": sum(x["tp"] for x in r) / sum(x["counted"] for x in r),
+                "recall": sum(x["tp"] for x in r) / k, "count_mae": float(np.abs(s).mean()),
+                "signed_mean": float(s.mean())}
+
+    steep_frame = [r["median_aspect_w_over_h"] < STEEP_ASPECT for r in rows]
+    cells = {}
+    for name, m, gm in (("steep", steep, gt_steep), ("not_steep", ~steep, ~gt_steep)):
+        cells[name] = [{"labelled": int((gm & (gt_ter == t)).sum()),
+                        "missed": int((m & (ter == t)).sum()),
+                        "miss_rate": float((m & (ter == t)).sum() / (gm & (gt_ter == t)).sum())
+                        if (gm & (gt_ter == t)).any() else np.nan} for t in range(3)]
     return {
         "eval_run": eval_dir.name, "split": e["split"], "images": n, "boxes": n_gt,
         "conf": conf, "precision": mine[0], "recall": mine[1], "count_mae": mine[2],
@@ -247,7 +290,11 @@ def analyse(eval_dir: Path, fp: dict, conf: float, tercile_edges) -> dict:
             "miss_rate_by_area_tercile": [float((ter == t).sum() / (gt_ter == t).sum())
                                           for t in range(3)],
             "gt_by_area_tercile": [int((gt_ter == t).sum()) for t in range(3)],
+            "by_steep_and_area_tercile": cells,
         },
+        "by_frame_geometry": {
+            "steep": group([i for i in range(n) if steep_frame[i]]),
+            "rest": group([i for i in range(n) if not steep_frame[i]])},
         "frames": rows,
     }
 
@@ -338,7 +385,8 @@ def main(argv: list[str]) -> int:
 
     out = {"run": run, "git_sha": sha, "git_dirty": dirty, "post_hoc": True,
            "conf": conf, "area_tercile_edges_px": edges.tolist(),
-           "labels": {s: label_stats(p) for s, p in props.items()},
+           "steep_aspect": STEEP_ASPECT,
+           "labels": {s: label_stats(p, edges) for s, p in props.items()},
            **{s: {k: v for k, v in r.items() if k != "frames"} for s, r in res.items()},
            "correlations": {s: correlations(r["frames"]) for s, r in res.items()}}
     (dest / "analysis.json").write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8",
