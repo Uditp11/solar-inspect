@@ -1,8 +1,11 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (21 Oct 2026): in progress.** Module 4 (classification) is finished. Module 5's
+> **Status (22 Oct 2026): in progress.** Module 4 (classification) is finished. Module 5's
 > regression and per-inverter analysis on plant generation data is finished; its triage and
-> SQL layer is not built yet. Segmentation, detection and tracking are not built yet.
+> SQL layer is not built yet. Module 2 (detection) is in progress: IoU, NMS and AP@0.5 are
+> written from scratch, unit-tested and cross-checked against torchvision and torchmetrics, and a
+> first YOLOv8n fine-tune has been evaluated on val; there is no test number yet. Segmentation
+> and tracking are not built yet.
 
 The plan is four perception modules trained and benchmarked independently on public solar imagery,
 sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
@@ -90,7 +93,7 @@ inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analyti
 ## Not built yet
 
 - **1 · Segmentation (D3 PV01):** site-footprint IoU and Dice per rooftop subset, against a naive colour-threshold baseline.
-- **2 · Detection (D2):** mAP@0.5 from my own implementation checked against torchmetrics, mAP@0.5:0.95, and per-image panel-count error on the 63-image test split.
+- **2 · Detection (D2), in progress:** the metrics are built and cross-checked, and a first YOLOv8n fine-tune has been evaluated on val. Still missing: the tuning pass (model size and brightness augmentation, three seeds each), the operating confidence, the NMS IoU sweep, and the single test evaluation that gives mAP@0.5 from my own implementation checked against torchmetrics, mAP@0.5:0.95, and per-image panel-count error on the 63-image test split.
 - **3 · Tracking (D5, synthetic):** MOTA, IDF1 and ID switches, and how many unique modules remain after deduplicating detections across frames.
 - **5 · Triage and SQL:** ordinal triage of findings and an SQL layer over the analytics. The regression and per-inverter half of module 5 is built (above).
 
@@ -98,18 +101,19 @@ inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analyti
 
 ## Scope: what this is and what it is not
 
-What ran is module 4 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
+What has finished is module 4 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
 trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
 config was evaluated once on the held-out test split. Calibration, a base-rate correction
 and a distillation experiment followed, on val or on the saved outputs of that one test
 run. D2 and D3 were downloaded and prepared (D2 deduplicated and re-split, D3 counted per
-subset), but no model has been trained on them.
+subset). On D2 a first YOLOv8n fine-tune has been trained and evaluated on val, with no test
+number yet; no model has been trained on D3.
 
 Module 5's regression half ran on D4, real generation data from two plants: a plant-level
 fit with its diagnostics, and per-inverter availability and performance rankings.
 
-**It is not** a finished pipeline: segmentation, detection, tracking, triage and SQL have no
-code yet, so nothing runs end to end. Its numbers are not comparable to a published
+**It is not** a finished pipeline: detection has code but is not finished, and segmentation,
+tracking, triage and SQL have no code yet, so nothing runs end to end. Its numbers are not comparable to a published
 benchmark, because D1 ships no official split. It is not a temperature or power-loss
 measurement, because the imagery carries no radiometric data.
 
@@ -125,8 +129,8 @@ column is the planned cross-check.
 
 | Component | Status | Written by me | Library | Cross-checked against |
 |---|---|---|---|---|
-| IoU, NMS, mAP@0.5 | planned | ✓ | none | torchmetrics |
-| mAP@0.5:0.95 | planned | | torchmetrics | |
+| IoU, NMS, mAP@0.5 | built | ✓ | none | torchmetrics (mAP@0.5, equal at 101 points on val); `torchvision.ops.nms` (NMS); hand-computed (IoU) |
+| mAP@0.5:0.95 | built | | torchmetrics | the from-scratch AP averaged over ten IoU thresholds |
 | U-Net | planned | ✓ (`nn.Conv2d` etc.) | none | |
 | Detector | planned | | Ultralytics YOLOv8 | |
 | Kalman filter | planned | ✓ | none | analytic 2-step test |
@@ -242,11 +246,12 @@ image. The split here is deduplicated by content hash and grouped by acquisition
 [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md). Because this is not the published
 split, **no detection number from it will be comparable to a published number on D2.**
 
-`max_det` is set to **1000** in [`configs/det_yolo.yaml`](configs/det_yolo.yaml), not
+`max_det` is set to **3000** in [`configs/det_yolo.yaml`](configs/det_yolo.yaml), not
 Ultralytics' default of 300. Eight of the 252 unique frames carry more than 300 boxes
 (max 584) and three of those land in the test split, so the default would have silently
 truncated 3.2% of frames. Per-image panel-count error, the domain metric, would then
-have been wrong with no error message anywhere.
+have been wrong with no error message anywhere. 1000 was not enough either: the densest
+val frame (584 boxes) returned exactly 1,000 detections with the cap at 1000.
 
 ---
 
@@ -256,13 +261,15 @@ have been wrong with no error message anywhere.
 python -m pytest
 ```
 
-Run on 21 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **67 passed**, 7 deprecation
-warnings from torch and pycocotools, in 8 s. No test needs a GPU. Three D4 tests read the
+Run on 22 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **113 passed**, 7 deprecation
+warnings from torch and pycocotools, in 40 s. No test needs a GPU. Three D4 tests read the
 real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
-dataset. They cover the classification maths and the analytics primitives (OLS, covariance,
-Durbin-Watson, VIF, availability, sister ratio, zero-output stretches), checked against
-hand-computed values and against statsmodels where it computes the same definition, and the
-`Finding` contract's mask encoding.
+dataset. They cover the classification maths, the detection metrics (IoU, NMS, AP at one and
+at ten IoU thresholds, panel-count error) and the tuning pass's selection rule, the analytics
+primitives (OLS, covariance, Durbin-Watson, VIF, availability, sister ratio, zero-output
+stretches), checked against hand-computed values and against torchvision and statsmodels
+where they compute the same definition, and the `Finding` contract's mask encoding. The
+torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every evaluation.
 
 ---
 
@@ -275,7 +282,7 @@ hand-computed values and against statsmodels where it computes the same definiti
 - Compute a performance ratio or specific yield (kWh/kWp) for D4. It needs nameplate DC capacity per inverter and plane-of-array irradiance, and D4 has neither, so the per-inverter slope cannot tell a weak inverter from a smaller array, and the DC/AC ratio is not measurable.
 - Identify a cause for any underperforming inverter. The confounders are measured as patterns or stated as not measurable; 34 days cannot separate a fault from a season.
 - Separate partial output from the main power curve in the slope fits. Plant 2's producing intervals include some well below the line, and they pull its slopes down.
-- Build modules 1, 2 and 3, or module 5's triage and SQL layer. See "Not built yet" above.
+- Build modules 1 and 3, finish module 2 (in progress), or build module 5's triage and SQL layer. See "Not built yet" above.
 
 ---
 
