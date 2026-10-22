@@ -1005,3 +1005,149 @@ much neighbouring ground-truth boxes overlap (median nearest-neighbour IoU per b
 run diagonally across the frame make axis-aligned boxes overlap; val, the split that selected
 everything, is the one where they do least. Train has more of it than test, so this does not by itself
 explain the drop; the cause is not established here.
+
+## D2 detection: post-hoc error analysis of the test evaluation
+
+Thu 22 Oct 2026, `scripts/error_analysis_det.py` at [`d9fbb14`](../../../commit/d9fbb14), clean tree,
+run `det_posthoc_20261022T205533Z` (deterministic; a development run of the same code gave identical
+output). **Post-hoc: made after the single test evaluation; nothing here changes the model, the
+config, the operating point or the reported numbers.**
+
+Inputs only: the test evaluation `det_test_20261022T200544Z` and the selected model's val evaluation
+`det_val_20261022T163802Z` (`predictions.npz`, `eval.json`), and the D2 labels and images. No model
+pass on any split. Shipped settings: the passes ran at NMS IoU 0.7, detections kept at conf 0.25;
+true and false positives from `ap.match` at IoU 0.5 as `evaluate()` takes them. The script checks
+its totals equal the evaluations' own: test precision 0.6025, recall 0.7899, count MAE 25.48, signed
+mean +19.67; val 0.9703, 0.9604, 1.88, -0.98. It reproduces the neighbour-IoU medians measured
+earlier (0.222, 0.048, 0.148).
+
+### False positives by class
+
+Rule, applied in this order (`detection/errors.py`, tested on hand-made frames): **duplicate**, IoU >
+0.3 with a true positive of the same frame; **localisation**, best IoU with any ground-truth box in
+[0.1, 0.5); **background**, best IoU with every ground-truth box < 0.1. A false positive whose best
+ground-truth IoU is >= 0.5 lost that box to a higher-scoring detection; if it also overlaps no true
+positive by more than 0.3 it passes none of the three tests and is counted as **unclassified**.
+
+| conf 0.25, IoU 0.5 | test, 63 images, 3,984 boxes | val, 51 images, 4,929 boxes |
+|---|---|---|
+| detections kept / TP / FP / FN | 5,223 / 3,147 / 2,076 / 837 | 4,879 / 4,734 / 145 / 195 |
+| duplicate | 794 (38.2%) | 101 (69.7%) |
+| localisation | 1,251 (60.3%) | 29 (20.0%) |
+| background | 22 (1.1%) | 15 (10.3%) |
+| unclassified | 9 (0.4%) | 0 |
+
+Per frame, signed count error (counted - labelled) is FP - FN; the script checks this on every
+frame. Mean per frame:
+
+| mean per frame | test | val |
+|---|---|---|
+| duplicate | +12.60 | +1.98 |
+| localisation | +19.86 | +0.57 |
+| background | +0.35 | +0.29 |
+| unclassified | +0.14 | 0 |
+| all FP | +32.95 | +2.84 |
+| FN (missed) | -13.29 | -3.82 |
+| **signed count error** | **+19.67** | **-0.98** |
+
+Test's +19.67 is localisation (+19.86) and duplicates (+12.60), partly offset by misses (-13.29);
+background false positives add +0.35. The classes are by IoU with the labels, so they do not separate
+causes cleanly: a detection on an unlabelled panel that sits next to a labelled one can overlap that
+neighbour and land in localisation or duplicate, not background.
+
+### Misses
+
+| unmatched ground truth at conf 0.25 | test | val |
+|---|---|---|
+| missed boxes | 837 | 195 |
+| with a kept detection at IoU [0.1, 0.5) (found, badly placed) | 56.4% | 49.7% |
+| no kept detection at IoU >= 0.1 | 43.4% | 49.2% |
+| best kept detection at IoU >= 0.5 (it matched another box) | 0.2% | 1.0% |
+| touching the frame edge (within 1 px) | 25.6% | 59.0% |
+| share of all labels touching the edge | 27.2% | 22.9% |
+| miss rate, edge boxes / interior boxes | 19.7% / 21.5% | 10.2% / 2.1% |
+
+Area terciles over all 19,525 D2 labels (train, val, test): cut at 906 and 3,251 px².
+
+| miss rate by area tercile | small (< 906 px²) | middle | large (> 3,251 px²) |
+|---|---|---|---|
+| test | 16.0% (of 1,466) | 18.5% (of 990) | 27.4% (of 1,528) |
+| val | 14.1% (of 1,323) | 0.1% (of 3,132) | 1.1% (of 474) |
+
+On val the misses are small boxes and edge boxes. On test they are spread over the frame and are
+most frequent among the largest boxes.
+
+### What differs between the sorties, labels and pixels only
+
+Medians with the interquartile range in brackets. Box sizes in pixels on the 640 x 512 frames.
+Neighbour IoU: per box, its largest IoU with another labelled box of the same frame (boxes alone in
+their frame left out). DN: the 8-bit rendered value, uncalibrated; per frame, its mean, its standard
+deviation, and the mean DN inside the labelled boxes minus outside them (an intra-frame contrast in
+DN, not a physical quantity).
+
+| | train (sorties 1, 3, 5) | val (sortie 2) | test (sortie 4) |
+|---|---|---|---|
+| frames, boxes | 138, 10,612 | 51, 4,929 | 63, 3,984 |
+| box width, px | 59.9 [32.3, 73.4] | 52.0 [39.7, 63.3] | 46.8 [29.7, 78.7] |
+| box height, px | 46.0 [23.3, 57.1] | 30.3 [23.1, 35.8] | 40.5 [17.4, 58.2] |
+| box area, px² | 2,603 [755, 4,128] | 1,497 [821, 2,285] | 1,864 [553, 4,556] |
+| aspect ratio w/h | 1.32 [1.24, 1.43] | 1.87 [1.57, 1.99] | 1.67 [1.00, 1.95] |
+| boxes per frame, median (range) | 66 (0 to 375) | 87 (12 to 584) | 44 (13 to 512) |
+| neighbour IoU, median | 0.222 | 0.048 | 0.148 |
+| neighbour IoU > 0.3, share of boxes | 5.4% | 1.0% | 5.9% |
+| frames with median neighbour IoU > 0.2 | 128 of 138 | 14 of 51 | 27 of 63 |
+| frame DN mean | 120.8 [110.1, 129.5] | 131.9 [124.5, 136.5] | 115.6 [109.3, 118.4] |
+| frame DN std | 53.9 [50.3, 56.8] | 55.0 [53.0, 58.0] | 51.9 [49.1, 55.8] |
+| DN inside boxes minus outside | 80.8 [74.0, 87.2] | 94.3 [87.2, 102.5] | 77.6 [67.0, 87.1] |
+
+On these marginal statistics test is not outside train's range: train's boxes are larger, squarer
+and more overlapped than test's. Val is the split that differs most from both, with the most
+elongated boxes, the least neighbour overlap and the highest inside-minus-outside DN.
+
+### Per-frame correlations
+
+Spearman correlation over frames of per-frame AP@0.5 (101-point, the frame alone) and of per-frame
+signed count error at conf 0.25 with five frame properties. All twenty are reported. Declared reading:
+"clear" means p < 0.005, i.e. 0.05 over the ten correlations of a split.
+
+| test, 63 frames | AP@0.5 rho (p) | signed count error rho (p) |
+|---|---|---|
+| median box area | -0.29 (0.020) | +0.03 (0.84) |
+| boxes per frame | +0.20 (0.11) | +0.00 (0.99) |
+| median neighbour IoU | -0.27 (0.036) | +0.20 (0.12) |
+| median aspect ratio w/h | **+0.57 (1.1e-6), clear** | **-0.49 (5.4e-5), clear** |
+| DN inside minus outside | +0.15 (0.25) | +0.01 (0.91) |
+
+| val, 51 frames | AP@0.5 rho (p) | signed count error rho (p) |
+|---|---|---|
+| median box area | +0.25 (0.078) | +0.28 (0.046) |
+| boxes per frame | -0.32 (0.022) | -0.32 (0.022) |
+| median neighbour IoU | +0.12 (0.39) | +0.28 (0.045) |
+| median aspect ratio w/h | -0.22 (0.12) | **-0.45 (0.00097), clear** |
+| DN inside minus outside | -0.36 (0.0098) | -0.13 (0.38) |
+
+Three of the twenty are clear, all with aspect ratio: on test, frames whose boxes are squarer have
+lower AP and more over-counting; on val, more over-counting. The rest are not clear at 63 and 51
+frames. The properties are correlated with each other, so the aspect ratio is not separable from
+them: on test, aspect ratio against neighbour IoU -0.75, against the contrast +0.47, against box area
+-0.31 (box area against boxes per frame -0.75). Squarer axis-aligned boxes are what rows crossing the
+frame diagonally produce, so the clear correlations are consistent with row orientation and not
+separable, from these outputs, from the neighbour overlap that comes with it.
+
+### The frames with the largest count error
+
+| test frame | labelled | counted | error | TP | dup | loc | bg | uncl | FN | AP@0.5 | median area px² | aspect |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `DJI_20230213164043_0066` | 108 | 213 | +105 | 95 | 73 | 44 | 0 | 1 | 13 | 0.658 | 1,947 | 0.99 |
+| `DJI_20230213164649_0100` | 112 | 12 | -100 | 12 | 0 | 0 | 0 | 0 | 100 | 0.268 | 2,309 | 0.74 |
+| `DJI_20230213164057_0068` | 81 | 178 | +97 | 40 | 34 | 104 | 0 | 0 | 41 | 0.191 | 1,936 | 0.77 |
+| `DJI_20230213164125_0071` | 42 | 137 | +95 | 37 | 53 | 47 | 0 | 0 | 5 | 0.410 | 3,586 | 1.09 |
+| `DJI_20230213164055_0067` | 90 | 165 | +75 | 82 | 50 | 32 | 0 | 1 | 8 | 0.691 | 2,849 | 1.02 |
+| `DJI_20230213164450_0091` | 512 | 456 | -56 | 381 | 56 | 15 | 4 | 0 | 131 | 0.798 | 278 | 2.15 |
+
+Five of the six have a median aspect ratio between 0.74 and 1.09 (test's median is 1.67); the sixth
+is the densest test frame, with the smallest boxes. Four are consecutive or nearly consecutive frames
+(0066 to 0071). Overlays of these six and of the two val frames with the largest error (-11, -7), a
+contact sheet, and the per-frame numbers of all 63 test frames are in
+`runs/det_posthoc_20261022T205533Z/` (not in git). Whether the background boxes are unlabelled
+panels is a visual question these numbers do not answer.
