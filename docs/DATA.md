@@ -406,7 +406,8 @@ ADR 0002.
 8 of the 252 unique frames, 3.2%.) The design note that `max_det` truncation is "fine
 at D2's ~75 panels/frame" holds for the mean and not for the tail. This is a measured
 bug on this dataset, not a hypothetical one. `configs/det_yolo.yaml` sets
-**`max_det: 1000`**.
+**`max_det: 3000`**, because 1000 was not enough either: the densest val frame (584 boxes)
+returned exactly 1,000 detections with the cap at 1000.
 
 **Also:** two train images have no label file at all
 (`DJI_20230213170209_0001_T_JPG…`, `DJI_20230213170213_0003_T_JPG…`), so there are 233

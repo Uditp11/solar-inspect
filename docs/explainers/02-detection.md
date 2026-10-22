@@ -354,7 +354,7 @@ explain it, though: train has more neighbour overlap in its labels than test (me
 - **Axis-aligned boxes.** Rows that cross the frame diagonally make neighbouring boxes overlap in the
   labels themselves; the oriented-box formulation was not tried.
 - **Val was used three times**: for epoch selection inside each run, arm selection across runs, and
-  the operating confidence. Its numbers are optimistic, and the test result measures by how much.
+  the operating confidence. Its numbers are optimistic by an amount that is not separated from the shift between sorties.
 - **Not comparable to published D2 numbers**, because the published splits are contaminated and a
   deduplicated, sortie-grouped split is used instead.
 - **Rendered thermal imagery only.** No radiometric data and no RGB; nothing here is a temperature.
