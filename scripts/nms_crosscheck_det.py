@@ -63,7 +63,13 @@ def capture() -> dict[str, np.ndarray]:
         return original_nms(prediction, conf_thres, *args, **kwargs)
 
     def wrapped_update(self, preds, batch):
-        for f, c in zip(batch["im_file"], pending.pop(0)):
+        # The validator calls NMS once more than it updates metrics (a batch-of-one call
+        # before the loop), so each update is paired with the NMS call just before it.
+        last = pending[-1]
+        pending.clear()
+        if len(last) != len(batch["im_file"]):
+            raise SystemExit("captured NMS input does not match the batch")
+        for f, c in zip(batch["im_file"], last):
             cands[Path(f).name] = c
         return original_update(self, preds, batch)
 
