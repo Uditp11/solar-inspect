@@ -1151,3 +1151,82 @@ is the densest test frame, with the smallest boxes. Four are consecutive or near
 contact sheet, and the per-frame numbers of all 63 test frames are in
 `runs/det_posthoc_20261022T205533Z/` (not in git). Whether the background boxes are unlabelled
 panels is a visual question these numbers do not answer.
+
+### Visual check and the orientation tail
+
+Thu 22 Oct 2026, `scripts/error_analysis_det.py` at [`5b1872b`](../../../commit/5b1872b), clean tree,
+run `det_posthoc_20261022T214418Z`. **Post-hoc: made after the single test evaluation; nothing here
+changes the model, the config, the operating point or the reported numbers.** Every number of the
+first post-hoc run above is reproduced exactly by this run (the per-frame CSV is byte-identical).
+
+**Visual check.** The eight overlays of `det_posthoc_20261022T205533Z` were looked at in review,
+after the first run. What they show:
+
+- The labels cover the visible panels in all six test frames. Background (red) boxes appear only on
+  the densest frame (4 of them). There is no sign of unlabelled panels, so missing labels are not
+  supported as an explanation of the over-count.
+- Five of the six test frames are close views of rows that cross the frame steeply, near vertical.
+  There the axis-aligned boxes of neighbouring modules overlap heavily, in the labels as in the
+  predictions. Four of them (0066 to 0071) over-fire, with stacks of overlapping boxes along each row
+  (duplicate and localisation false positives). Frame 0100, with the same geometry, under-fires: 12
+  of 112 panels counted.
+- The two val frames and the densest test frame show rows running across the frame nearly
+  horizontally, with small boxes that do not overlap.
+
+The medians in "What differs between the sorties" compare the middles of the distributions. The
+overlays point at a tail: test's lower aspect quartile is 1.00 against train's 1.24, boxes taller than
+wide, which is what a steep row gives. The tail is measured below.
+
+**Declared before the measurement:** a box is *steep* when its aspect ratio w/h is below 1.1; a frame
+is steep when the median aspect ratio of its boxes is below 1.1. The 1.1 is the value the overlays
+suggested, fixed as a constant in the script before this ran, not tuned afterwards. Area terciles as
+above (906 and 3,251 px², over all 19,525 labels).
+
+| labels only | train | val | test |
+|---|---|---|---|
+| boxes with aspect w/h < 1.0 | 9.9% | 8.0% | 25.1% |
+| boxes with aspect w/h < 1.1 (steep) | 12.8% | 9.8% | 27.6% |
+| steep frames (median box aspect < 1.1) | **0 of 136** | **0 of 51** | **22 of 63** |
+| lowest per-frame median aspect | 1.22 | 1.22 | 0.72 |
+
+(Train's 136 frames are the 138 less its two empty ones.)
+
+| labels by steepness and area tercile | small | middle | large |
+|---|---|---|---|
+| train, steep | 529 | 630 | **196** |
+| train, not steep | 3,190 | 1,757 | 4,310 |
+| val, steep | 293 | 124 | 65 |
+| val, not steep | 1,030 | 3,008 | 409 |
+| test, steep | 159 | 369 | **570** |
+| test, not steep | 1,307 | 621 | 958 |
+
+Steep boxes exist in train (1,355 of 10,612), but no train frame is dominated by them, and large
+steep boxes are 196 of 10,612 train labels (1.8%) against 570 of 3,984 test labels (14.3%).
+
+The test evaluation split by frame geometry, from the saved predictions (conf 0.25, NMS IoU 0.7,
+IoU 0.5; AP@0.5 101-point pooled over the group's frames). Val has no steep frame, so it has only the
+second row.
+
+| | frames | labelled | AP@0.5 | precision | recall | count MAE | signed mean |
+|---|---|---|---|---|---|---|---|
+| test, steep frames | 22 | 1,009 | **0.2253** | 0.2391 | 0.4470 | 48.95 | +39.86 |
+| test, other frames | 41 | 2,975 | **0.9223** | 0.8079 | 0.9062 | 12.88 | +8.83 |
+| val, all frames (none steep) | 51 | 4,929 | 0.9745 | 0.9703 | 0.9604 | 1.88 | -0.98 |
+
+The 22 steep frames carry 877 of the 1,239 panels of test's net over-count (71%; 22 x 39.86 and
+63 x 19.67). The other 41 test frames are still below val (AP@0.5 0.9223 against 0.9745, count MAE
+12.88 against 1.88), so the steep frames do not account for the whole gap.
+
+| test miss rate (missed / labelled) | small | middle | large |
+|---|---|---|---|
+| steep boxes | 26.4% (42 / 159) | 35.5% (131 / 369) | **68.9% (393 / 570)** |
+| not steep | 14.8% (193 / 1,307) | 8.4% (52 / 621) | 2.7% (26 / 958) |
+
+(Val, for reference: steep 18.8%, 1.6%, 1.5% of 293, 124, 65; not steep 12.8%, 0.03%, 1.0% of 1,030,
+3,008, 409.) On test the rise of the miss rate with box size seen above is a property of the steep
+boxes: large steep boxes are missed 68.9% of the time, large other boxes 2.7%.
+
+Reading, from these numbers only: test's drop is concentrated in frames whose rows cross the frame
+steeply, a geometry no training frame has and whose large boxes are rare in train. That is consistent
+with a change in row orientation relative to the camera between sorties, and not separable from the
+neighbour overlap that comes with it. The remaining gap on the other 41 frames is not explained here.
