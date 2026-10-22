@@ -1,0 +1,48 @@
+# D5 flyover sequences, declared before any sequence is generated.
+#
+# Synthetic: a window moving over one D2 frame per sequence (src/solar_inspect/tracking/
+# flyover.py). D2's frames do not overlap, so no real flyover can be built from them;
+# tracking metrics on these sequences are a correctness check of the trackers, not a
+# performance result.
+
+# Source frames come from the D2 VALIDATION split. The detector never trained on val,
+# so its detections on a val window carry real errors rather than memorised boxes; and
+# the test split stays unread (it has been evaluated once, by the detection module).
+# Val has no steep-row frames (docs/EXPERIMENTS.md, post-hoc detection analysis), so
+# these sequences do not exercise the detector's worst case. scripts/make_flyover.py
+# refuses any other split.
+source_split: val
+
+# Which val frame each sequence uses: the 51 val image names, sorted, then shuffled with
+# this seed. Development seed i uses frame i of the shuffled list (i = 0..9), held-out
+# seed 100 + j uses frame 10 + j (j = 0..19). No frame is shared between the two sets.
+frame_assignment_seed: 0
+
+seeds:
+  # Anything may be looked at and tuned on these.
+  development: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  # Generated with the development seeds, scored only in the module's sweep.
+  held_out: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+             110, 111, 112, 113, 114, 115, 116, 117, 118, 119]
+
+# Generator parameters (FlyoverParams), every one written out.
+window: [320, 256]          # w, h px: a quarter of the 640 x 512 source frame
+frames: 60
+pan_speed: 4.0              # source px per frame at the start; the module's sweep varies it
+accel_std: 0.25             # source px per frame^2 per axis: the velocity is a random walk
+yaw_rate_deg: 0.15          # per frame, direction seeded: 8.85 deg over 60 frames
+scale_range: [0.85, 1.15]   # altitude ramp, end to end, direction seeded
+occlusion_frames: 10        # a panel is more than half under the band for about this long
+occluder_speed: 8.0         # source px per frame; band width = 8 x 10 = 80 px
+visible_fraction: 0.5       # visible = at least this share inside the window and unoccluded
+
+# Detections: the shipped detector, run on every rendered frame. conf_operating, iou,
+# max_det and checkpoint_sha256 are read from det_config; the checkpoint must match.
+detector:
+  config: configs/det_yolo.yaml
+  # The detector was trained on 640 x 512 frames at imgsz 640, i.e. at the frames' own
+  # pixel scale. At imgsz 640 a 320 x 256 window would be upsampled 2x and every panel
+  # would look twice its trained size; at 320 the window is seen 1:1 (no padding: 256
+  # is a multiple of the stride 32).
+  imgsz: 320
+  device: 0
