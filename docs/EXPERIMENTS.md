@@ -586,3 +586,66 @@ counts agree exactly on every frame of both seeds, so it sits in the global accu
 not pycocotools' epsilon in the precision denominator, not float32 summation of the precision
 tensor, and not frames without ground truth (there are none). Left at that after about 15
 minutes of a 60-minute reconciliation budget.
+
+## D2 detection runs
+
+Same ledger rules. Split: the sortie split from `configs/d2.yaml` (ADR 0002); training reads train
+(138 images, 10,612 boxes) and selects on val; **every val number here is on val, 51 images, 4,929
+boxes**. Nothing here reads test. Config `configs/det_yolo.yaml` (YOLOv8n from `yolov8n.pt`, seed 0,
+batch 16, imgsz 640, augmentation as declared in `4b0848c`); overrides are listed where used.
+Training rows give Ultralytics' in-training val numbers for the best epoch, which Ultralytics 8.4
+selects on mAP50-95. Full output: `runs/det_<run>/manifest.json`, `results.csv`, `args.yaml`.
+
+| run | git SHA | dirty | script | what ran | epochs run (best) | wall | peak VRAM reserved | val mAP50 / mAP50-95 at best epoch, 51 images, 4,929 boxes |
+|---|---|---|---|---|---|---|---|---|
+| 20261022T072913Z | `92a01b4` | no | `scripts/train_det.py` | smoke, `epochs=2` | 2 (2) | 85 s | not recorded | 0.00081 / 0.00016 |
+| 20261022T073134Z | `d4ea608` | no | `scripts/train_det.py` | smoke, `epochs=2`, after the manifest fix | 2 (2) | 67 s | 4,468 MiB | 0.00081 / 0.00016 |
+| 20261022T073325Z | `d4ea608` | no | `scripts/train_det.py` | full config, no overrides | 100 (81) | 803 s | 5,450 MiB | 0.9733 / 0.8213 |
+
+The first smoke run's peak VRAM was printed (4,478 MiB) but its manifest is from before the
+fix and is otherwise identical; the two smoke runs give the same numbers to five decimals.
+Patience 20 never triggered: the best epoch was 81 and training ran all 100.
+
+### Val evaluation of `det_20261022T073325Z/weights/best.pt`
+
+One Ultralytics validation pass with `conf 0.001`, `iou 0.7`, `max_det 1000`; every number except
+Ultralytics' own is computed from the `predictions.json` that pass wrote. Run
+`det_val_20261022T074726Z` from `d4ea608`, clean tree, `scripts/eval_val_det.py`. Val, 51 images,
+4,929 boxes, 14,056 detections.
+
+| metric (val, 51 images, 4,929 boxes) | Ultralytics | from scratch, all-point | from scratch, 101-point | torchmetrics |
+|---|---|---|---|---|
+| AP@0.5 | 0.973270 | 0.977807 | 0.973185 | 0.973185 |
+| AP@0.5:0.95 | 0.822093 | | 0.824685 (10 thresholds, 101-point; computed in the reconciliation below) | 0.824685 |
+
+| confidence (val, 51 images, 4,929 boxes) | precision | recall | panel-count MAE | signed mean | signed min, max |
+|---|---|---|---|---|---|
+| 0.1 | 0.9400 | 0.9720 | 3.84 | +3.29 | -3, +116 |
+| 0.25 | 0.9703 | 0.9604 | 1.88 | -0.98 | -11, +6 |
+| 0.5 | 0.9893 | 0.9359 | 5.61 | -5.22 | -130, +2 |
+
+Ultralytics' own precision / recall at its max-F1 confidence: 0.9751 / 0.9576. No operating point
+is chosen here.
+
+**Reconciled, three ways.** The from-scratch 101-point AP equals torchmetrics' at both AP@0.5
+and AP@0.5:0.95. Ultralytics differs for two reasons, each measured by capturing its validator's
+internal boxes and scoring them with `ap.match`:
+
+| boxes (val, 51 images, 4,929 boxes) | TP at IoU 0.5 | AP@0.5, 101-point | AP@0.5, Ultralytics' trapezoid | AP@0.5:0.95, 101-point | AP@0.5:0.95, Ultralytics' trapezoid |
+|---|---|---|---|---|---|
+| Ultralytics' internal (letterboxed, not clipped) | 4,824 | 0.968584 | **0.973270** | 0.818904 | **0.822093** |
+| `predictions.json` (clipped to the 640 x 512 frame) | 4,836 | **0.973185** | 0.977917 | **0.824685** | 0.827932 |
+
+Bold values reproduce the reported numbers exactly. (1) Ultralytics computes its metrics on boxes
+that are not clipped to the frame; `predictions.json` clips them, and 5,079 of the 14,056 saved
+boxes touch a frame edge, so edge panels gain IoU and 12 more pass 0.5. (2) Ultralytics
+integrates a linearly interpolated 101-point curve with the trapezoid rule, which lands near the
+all-point value, not COCO's step. On these predictions the two effects nearly cancel at AP@0.5,
+which is why Ultralytics' number sits 8.5e-5 from the other two; that closeness is a coincidence,
+not agreement. Matching rule is not a factor here: Ultralytics' IoU-greedy rule and the score-greedy
+rule give the same 4,836 TPs on the json boxes.
+
+**`max_det` binds on one frame.** The val frame with 584 ground-truth boxes
+(`DJI_20230213154730_0155`) returns exactly 1,000 detections at `conf 0.001`, the lowest kept at
+0.00388, so its tail below that score is truncated. It does not touch any confidence threshold in
+the table above; its effect on AP is limited to that tail and was not measured.
