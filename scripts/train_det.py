@@ -80,7 +80,8 @@ def main(argv: list[str]) -> int:
     manifest = {
         "run": run, "git_sha": sha, "git_dirty": dirty, "config_path": CONFIG,
         "overrides": over, "config": {**cfg, "data": data.relative_to(REPO).as_posix()},
-        "splits": {k: v.relative_to(REPO).as_posix() for k, v in paths.items()},
+        # train and val only: a training run's record never names the test tree
+        "splits": {k: paths[k].relative_to(REPO).as_posix() for k in ("train", "val")},
         "epochs_run": len(rows), "best_epoch": best + 1,
         "best": {k: float(rows[best][k]) for k in rows[best] if k.startswith("metrics/")},
         "last": {k: float(rows[-1][k]) for k in rows[-1] if k.startswith(("metrics/", "train/"))},
