@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from solar_inspect.tracking.kalman import initial_state, predict, update
+from solar_inspect.tracking.kalman import (default_P0, default_Q, initial_state, predict,
+                                           update)
 
 U0, V0, S0, R0 = 100.0, 50.0, 400.0, 1.6
 VEL = np.array([3.0, -2.0, 20.0])
@@ -63,3 +64,61 @@ def test_kalman_recovers_exact_state_on_noiseless_linear_track():
     # And the next prediction lands on the next box of the line.
     x, _ = predict(x, P, Q)
     np.testing.assert_allclose(x[:4], z_at(3), rtol=0, atol=1e-9)
+
+
+def test_predict_moves_the_mean_by_velocity_times_dt():
+    # x = [10, 20, 100, 2 | 1, -1, 5], dt = 2:
+    # u 10 + 2*1 = 12, v 20 + 2*(-1) = 18, s 100 + 2*5 = 110, r unchanged 2,
+    # velocities unchanged.
+    x = np.array([10.0, 20.0, 100.0, 2.0, 1.0, -1.0, 5.0])
+    x2, _ = predict(x, np.eye(7), default_Q(), dt=2.0)
+    np.testing.assert_allclose(x2, [12, 18, 110, 2, 1, -1, 5], rtol=0, atol=1e-12)
+
+
+def test_predict_grows_the_covariance_by_F_P_Ft_plus_Q():
+    # P = I, dt = 2. Each (position, velocity) pair has F = [[1, 2], [0, 1]], so
+    #   F I F^T = [[1 + 4, 2], [2, 1]] = [[5, 2], [2, 1]].
+    # Adding SORT's Q (1 on positions, 0.01 on u' v', 1e-4 on s'):
+    #   u, v: [[6, 2], [2, 1.01]]     s: [[6, 2], [2, 1.0001]]
+    # r has no velocity: 1 + 1 = 2, and no cross term with anything.
+    expect = np.zeros((7, 7))
+    for p, vel, qv in ((0, 4, 0.01), (1, 5, 0.01), (2, 6, 1e-4)):
+        expect[p, p], expect[p, vel] = 6.0, 2.0
+        expect[vel, p], expect[vel, vel] = 2.0, 1.0 + qv
+    expect[3, 3] = 2.0
+    _, P2 = predict(np.zeros(7), np.eye(7), default_Q(), dt=2.0)
+    np.testing.assert_allclose(P2, expect, rtol=0, atol=1e-12)
+
+    # A correlated 2 x 2 block, dt = 1, Q = 0: P_u = [[4, 1], [1, 2]],
+    #   F P_u     = [[4 + 1, 1 + 2], [1, 2]] = [[5, 3], [1, 2]]
+    #   F P_u F^T = [[5 + 3, 3], [1 + 2, 2]] = [[8, 3], [3, 2]].
+    P = np.eye(7)
+    P[np.ix_([0, 4], [0, 4])] = [[4.0, 1.0], [1.0, 2.0]]
+    _, P1 = predict(np.zeros(7), P, np.zeros((7, 7)))
+    np.testing.assert_allclose(P1[np.ix_([0, 4], [0, 4])], [[8, 3], [3, 2]], rtol=0, atol=1e-12)
+
+
+def prior() -> tuple[np.ndarray, np.ndarray]:
+    """A predicted belief to update: SORT's P0 pushed through one predict."""
+    x = np.array([10.0, 20.0, 100.0, 2.0, 1.0, -1.0, 5.0])
+    return predict(x, default_P0(), default_Q())
+
+
+def test_update_with_R_to_zero_snaps_the_measured_components_to_z():
+    # A measurement trusted completely: the posterior's u, v, s, r are z itself.
+    x, P = prior()
+    z = np.array([13.0, 17.0, 120.0, 2.5])
+    xu, Pu = update(x, P, z, 1e-12 * np.eye(4))
+    np.testing.assert_allclose(xu[:4], z, rtol=0, atol=1e-6)
+    # ...and nothing is left uncertain about them.
+    np.testing.assert_allclose(Pu[:4, :4], 0.0, rtol=0, atol=1e-6)
+
+
+def test_update_with_R_to_infinity_leaves_the_prediction_unchanged():
+    # A measurement trusted not at all: gain ~ P / R ~ 1e4 / 1e12, times an innovation
+    # of at most 20, moves the mean by ~2e-7.
+    x, P = prior()
+    z = np.array([13.0, 17.0, 120.0, 2.5])
+    xu, Pu = update(x, P, z, 1e12 * np.eye(4))
+    np.testing.assert_allclose(xu, x, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(Pu, P, rtol=1e-6, atol=1e-6)

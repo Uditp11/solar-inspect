@@ -60,9 +60,18 @@ def initial_state(z: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return x, default_P0()
 
 
-def predict(x: np.ndarray, P: np.ndarray, Q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Prior for the next frame: x' = F x, P' = F P F^T + Q."""
-    return F @ x, F @ P @ F.T + Q
+def transition(dt: float = 1.0) -> np.ndarray:
+    """F for a step of dt frames."""
+    Fd = F.copy()
+    Fd[0, 4] = Fd[1, 5] = Fd[2, 6] = dt
+    return Fd
+
+
+def predict(x: np.ndarray, P: np.ndarray, Q: np.ndarray,
+            dt: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+    """Prior for the next step: x' = F x, P' = F P F^T + Q. Q is per step, as in SORT."""
+    Fd = transition(dt)
+    return Fd @ x, Fd @ P @ Fd.T + Q
 
 
 def update(x: np.ndarray, P: np.ndarray, z: np.ndarray,
