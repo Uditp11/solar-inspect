@@ -5,7 +5,8 @@
 No second pass over the test split: reads the `predictions.npz` and `eval.json` that
 `scripts/eval_test_det.py` wrote. Resamples the test images with replacement (2,000
 resamples, seed 0) and recomputes, on each resample, AP@0.5 (101-point), AP@0.5:0.95
-(101-point, ten IoU thresholds) and panel-count MAE at the config's `conf_operating`;
+(101-point, ten IoU thresholds), and precision, recall (IoU 0.5) and panel-count MAE at
+the config's `conf_operating`;
 the interval is the 2.5th to 97.5th percentile. Images are the unit because
 detections and ground truths within a frame are not independent.
 
@@ -74,20 +75,26 @@ def main(argv: list[str]) -> int:
     abs_err = np.abs(np.array([(s >= conf).sum() for s in scores]) - gt_n)
 
     pm = per_image_matches(boxes, scores, gts, COCO_IOU_THRESHOLDS)   # pm[0] is IoU 0.5
+    tp_at = np.array([t[s >= conf].sum() for s, t in pm[0]])          # per image, at conf
+    det_at = np.array([(s >= conf).sum() for s, _ in pm[0]])
 
     def stats(idx) -> tuple[float, float, float]:
         k = int(gt_n[idx].sum())
         aps = [ap(m, idx, k) for m in pm]
-        return aps[0], float(np.mean(aps)), float(abs_err[idx].mean())
+        return (aps[0], float(np.mean(aps)), tp_at[idx].sum() / det_at[idx].sum(),
+                tp_at[idx].sum() / k, float(abs_err[idx].mean()))
 
     point = stats(np.arange(n))
-    if not np.allclose(point[:2], (e["ap50_101_point"], e["ap50_95_101_point"]), atol=1e-12, rtol=0):
-        raise SystemExit(f"per-image matching gives {point[:2]}, eval.json "
-                         f"{e['ap50_101_point'], e['ap50_95_101_point']}")
+    at = e["at_conf"][str(conf)]
+    ref = (e["ap50_101_point"], e["ap50_95_101_point"], at["precision"], at["recall"],
+           at["count_mae"])
+    if not np.allclose(point, ref, atol=1e-12, rtol=0):
+        raise SystemExit(f"per-image matching gives {point}, eval.json {ref}")
 
     rng = np.random.default_rng(SEED)
     draws = np.array([stats(rng.integers(0, n, n)) for _ in range(RESAMPLES)])
-    keys = ("ap50_101_point", "ap50_95_101_point", f"count_mae_at_{conf}")
+    keys = ("ap50_101_point", "ap50_95_101_point", f"precision_at_{conf}",
+            f"recall_at_{conf}", f"count_mae_at_{conf}")
     res = {k: {"point": point[j], "ci95": np.percentile(draws[:, j], [2.5, 97.5]).tolist(),
                "bootstrap_std": float(draws[:, j].std(ddof=1))} for j, k in enumerate(keys)}
     signed = np.array([(s >= conf).sum() for s in scores]) - gt_n
