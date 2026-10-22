@@ -1,0 +1,36 @@
+# D2 detection tuning pass: two models x two hsv_v settings x three seeds, twelve runs.
+# Committed before the first arm ran. The declaration, with the noise floor and the
+# selection rule, is in docs/EXPERIMENTS.md under "Detection tuning pass, declared
+# before the first arm ran".
+#
+#   python scripts/tune_det.py            # the twelve runs, resumable
+#   python scripts/tune_det.py --smoke    # every run at epochs=1, separate output
+#
+# Every arm is configs/det_yolo.yaml (max_det 3000, patience 20, imgsz 640, augmentation
+# as declared there) with the overrides below, passed to scripts/train_det.py as
+# key=value. Each run's best.pt is then scored by scripts/eval_val_det.py on val.
+
+baseline: yolov8n-hsv0.4      # the committed config, unchanged
+seeds: [0, 1, 2]
+
+# Batch, decided by the declared rule from the yolov8s smoke run (2 epochs, batch 16,
+# run det_20261022T111038Z): peak 5,862 MiB reserved, no out-of-memory error, which is
+# at or below the 6,500 MiB the rule allows. So both models train at batch 16 and model
+# and batch do not change together.
+common:
+  batch: 16
+
+arms:
+  yolov8n-hsv0.4: {model: yolov8n.pt, hsv_v: 0.4}
+  yolov8n-hsv0.0: {model: yolov8n.pt, hsv_v: 0.0}
+  yolov8s-hsv0.4: {model: yolov8s.pt, hsv_v: 0.4}
+  yolov8s-hsv0.0: {model: yolov8s.pt, hsv_v: 0.0}
+
+# Selection score: val AP@0.5:0.95, 101-point (= torchmetrics), the eval.json key below.
+score: ap50_95_101_point
+# Reported beside it, never used for selection.
+secondary: [ap50_101_point, count_mae_at_0.25]
+
+# Noise floor: the largest three-seed standard deviation (ddof 1) of the score over the
+# four arms, rounded up to a multiple of 0.005 (and never below 0.005).
+noise_floor_round_up_to: 0.005

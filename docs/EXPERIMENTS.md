@@ -682,3 +682,50 @@ reference truncating its input. Fixed in `5b9b346` (the reference takes the eval
 `max_det`); the second re-evaluation agrees exactly. **Ultralytics' own numbers did not move** to
 six decimals, although its `predictions.json` carries the 1,257 detections. Not explained; not
 pursued, since no number taken forward depends on it. `max_det` was raised to 3000 in `19495cc`.
+
+## Detection tuning pass, declared before the first arm ran
+
+Written here, and in `configs/det_tuning.yaml`, **before any arm of the pass has run**. Nothing
+below changes once the first number is in.
+
+**1. Arms.** Everything as in `configs/det_yolo.yaml` at `19495cc` (`max_det 3000`, 100 epochs,
+patience 20, imgsz 640, the declared augmentation), with two factors crossed and three seeds each:
+`model` in {`yolov8n.pt`, `yolov8s.pt`} x `hsv_v` in {0.4, 0.0} x `seed` in {0, 1, 2}, twelve
+training runs. `yolov8n.pt` with `hsv_v 0.4` is the committed config and is the **baseline**. The
+`hsv_v` question: D2 frames are greyscale, so brightness jitter is the only colour augmentation that
+acts, and in rendered thermal imagery brightness is the signal; `0.0` turns it off. Patience 20 stays,
+so two runs can train for different numbers of epochs; that is the committed config's behaviour, kept
+rather than changed for the pass.
+
+**2. Batch.** 16 for both models. The rule was: 16 if a `yolov8s` smoke run at batch 16 peaks at or
+below 6,500 MiB reserved with no out-of-memory error, otherwise `yolov8s` at batch 8 with the
+confound named. The smoke run (`det_20261022T111038Z`, 2 epochs, at `86aed25`) peaked at 5,862 MiB
+reserved, so model and batch do not change together.
+
+**3. Score.** Each run's `best.pt` (selected by Ultralytics on its in-training val mAP50-95) is
+evaluated by `scripts/eval_val_det.py`; the score is **val AP@0.5:0.95, 101-point** (equal to
+torchmetrics'). Reported beside it and never used for selection: AP@0.5 (101-point) and panel-count
+MAE at conf 0.25. Val therefore carries two jobs here, epoch selection inside each run and arm
+selection across runs, and its numbers are optimistic by an unmeasured amount.
+
+**4. Noise floor.** The largest three-seed standard deviation (ddof 1) of the score over the four
+arms, rounded up to a multiple of 0.005, never below 0.005. Two arms whose mean scores differ by less
+than it are reported as indistinguishable and are not ranked. This floor is computed from the pass
+itself, because no earlier measurement of seed spread exists for this detector on this split; the
+rule that computes it is what is fixed now.
+
+**5. Selection rule.** Take the arm with the highest mean score. If it does not beat the baseline's
+mean by more than the noise floor, keep the baseline. Each factor is judged the same way: the
+selected arm takes the baseline's `model` and `hsv_v`, and changes a factor to the other level only
+if (a) the arm with the highest mean has that level, and (b) the arm that differs from the baseline in
+that factor alone beats the baseline's mean by more than the noise floor. A difference exactly equal
+to the floor does not count as beating it. The selected arm's **seed 0** run is the model taken
+forward, never its best seed, which would be selecting on noise. The rule is applied only if all
+twelve runs completed; if any failed, the per-arm results are reported with their seed counts and
+the decision goes to the next block rather than being made on fewer seeds.
+
+**6. What comes after, also fixed now.** On the selected model, on val: the operating confidence is
+the value on the grid 0.05, 0.10, ..., 0.95 that minimises panel-count MAE at NMS IoU 0.7; then the
+NMS IoU threshold is swept from 0.3 to 0.8 in steps of 0.05 at that confidence, panel-count error
+against threshold. Both are val-only and run in the next block. Then the final config is committed
+and pushed, and the test split is evaluated once.
