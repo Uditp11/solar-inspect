@@ -6,7 +6,9 @@ Ultralytics' validator runs inference once with the config's `conf`, `iou` and
 (101-point, averaged over ten IoU thresholds), torchmetrics'
 mAP@0.5 and mAP@0.5:0.95, precision, recall and panel-count error are then all
 computed from that same file, so the three AP numbers differ only in how they are
-computed, never in which predictions they see. The predictions are saved again as
+computed, never in which predictions they see. Precision, recall and count error are
+reported at a few fixed confidences and at the config's `conf_operating`, when it
+has one. The predictions are saved again as
 arrays (`predictions.npz`) so later sweeps reuse them without another pass.
 
 Ultralytics computes its numbers differently from both others, and the gaps are
@@ -65,7 +67,11 @@ def evaluate(weights: Path, split: str, cfg: dict, project: Path, name: str) -> 
         "at_conf": {},
     }
     gt_counts = [len(g) for g in gts]
-    for c in CONF_THRESHOLDS:
+    thresholds = CONF_THRESHOLDS
+    if "conf_operating" in cfg:
+        out["conf_operating"] = cfg["conf_operating"]
+        thresholds = tuple(sorted({*thresholds, cfg["conf_operating"]}))
+    for c in thresholds:
         k = sc >= c
         signed, _, mae = count_error(scores, gt_counts, c)
         out["at_conf"][str(c)] = {

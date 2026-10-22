@@ -38,6 +38,7 @@ from solar_inspect.detection.data import splits             # noqa: E402
 
 CONFIG = "configs/det_yolo.yaml"
 WEIGHTS = REPO / "runs" / "weights"
+EVAL_ONLY = ("conf_operating", "checkpoint_sha256")
 
 
 def overrides(argv: list[str]) -> dict:
@@ -56,6 +57,8 @@ def main(argv: list[str]) -> int:
     over = overrides(argv)
     cfg.update(over)
     data = REPO / cfg.pop("data")
+    for k in EVAL_ONLY:                 # read by the evaluations, not by Ultralytics' train()
+        cfg.pop(k, None)
     paths = splits(data)
     print(f"git {sha[:7]} dirty={dirty}; val -> {paths['val'].relative_to(REPO).as_posix()}")
 

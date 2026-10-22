@@ -1,11 +1,12 @@
-"""The val-is-not-test guard and the label-to-pixel conversion, on files made here."""
+"""The val-is-not-test guard, the checkpoint-hash guard and the label-to-pixel conversion,
+on files made here."""
 from __future__ import annotations
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from solar_inspect.detection.data import ground_truth, splits
+from solar_inspect.detection.data import check_checkpoint, ground_truth, splits
 
 
 def write_yaml(tmp_path, val: str):
@@ -39,3 +40,25 @@ def test_ground_truth_converts_normalised_centres_to_pixel_corners(tmp_path):
     assert names == ["a.jpg", "b.jpg"]
     np.testing.assert_allclose(boxes[0], [[288, 76.8, 352, 179.2]])
     assert boxes[1].shape == (0, 4)
+
+
+# SHA-256 of the three bytes b"abc" (FIPS 180-2, appendix B.1)
+ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+
+def test_a_checkpoint_with_the_pinned_hash_passes(tmp_path):
+    (tmp_path / "best.pt").write_bytes(b"abc")
+    assert check_checkpoint(tmp_path / "best.pt", ABC) == ABC
+
+
+@pytest.mark.parametrize("pinned", [ABC[:-1] + "0", "", None])
+def test_a_checkpoint_with_another_hash_or_none_pinned_is_refused(tmp_path, pinned):
+    (tmp_path / "best.pt").write_bytes(b"abc")
+    with pytest.raises(SystemExit):
+        check_checkpoint(tmp_path / "best.pt", pinned)
+
+
+def test_a_changed_checkpoint_is_refused(tmp_path):
+    (tmp_path / "best.pt").write_bytes(b"abd")
+    with pytest.raises(SystemExit):
+        check_checkpoint(tmp_path / "best.pt", ABC)

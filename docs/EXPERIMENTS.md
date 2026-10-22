@@ -935,3 +935,14 @@ Equal on every image at all three thresholds: the from-scratch NMS reproduces th
 detections. The first run of the script (`det_nms_xcheck_20261022T194625Z`, at `2ccc4b6`) stopped
 before comparing: the validator calls NMS once before its loop, which shifted the pairing of captured
 inputs to batches by one and matched 36 of 51 images; fixed in `8d8ab7a`.
+
+## Detection final config, before the test split is read
+
+`configs/det_yolo.yaml` as committed with this entry: `model` and `hsv_v` unchanged (the tuning pass
+kept the baseline), `conf 0.001`, `iou 0.7` and `max_det 3000` unchanged, `conf_operating 0.25`
+added (chosen on val above), and `checkpoint_sha256
+1bd7908cc646b5a4b0af5eaa23bd69cbc97b7a593af9c459cc19f71f9419976a`, the SHA-256 of
+`runs/det_20261022T163213Z/weights/best.pt`, the selected arm's seed 0 run. `scripts/eval_test_det.py`
+refuses any checkpoint with another hash (the first fine-tune's `best.pt`, which gives identical val
+predictions, hashes to `583beee52ffe...` and is refused), as well as configs not in `origin/main` and
+a second test evaluation.

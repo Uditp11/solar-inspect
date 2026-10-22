@@ -6,9 +6,14 @@ yaml's own directory) and refuses to return if train or val resolves to, inside,
 above the test tree. Pointing `val:` at test selects best.pt on the test split with
 no visible symptom, so every detection script calls this before Ultralytics reads
 anything.
+
+`check_checkpoint()` pins which file the single test evaluation may read: the
+checkpoint is not in git, so its SHA-256 is committed in `configs/det_yolo.yaml`
+before the test split is read, and any other file is refused.
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -46,3 +51,12 @@ def ground_truth(images_dir: Path) -> tuple[list[str], list[np.ndarray]]:
         names.append(img.name)
         boxes.append(np.column_stack([cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2]))
     return names, boxes
+
+
+def check_checkpoint(weights: Path, pinned: str | None) -> str:
+    """SHA-256 of `weights`; refuses unless it equals the pinned hash."""
+    digest = hashlib.sha256(Path(weights).read_bytes()).hexdigest()
+    if digest != pinned:
+        raise SystemExit(f"{Path(weights).name} has SHA-256 {digest[:12]}, the config pins "
+                         f"{(pinned or 'nothing')[:12]}. Refusing to evaluate another checkpoint.")
+    return digest

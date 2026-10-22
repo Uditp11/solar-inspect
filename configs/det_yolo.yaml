@@ -49,4 +49,18 @@ cutmix: 0.0
 # Inference / eval — applies to val, test and predict alike.
 max_det: 3000
 conf: 0.001    # low, so the PR curve is not truncated before AP is computed
-iou: 0.7       # NMS IoU; swept 0.3-0.8 separately for the panel-count-error figure
+iou: 0.7       # NMS IoU; swept 0.3-0.8 on val and kept, as declared (docs/EXPERIMENTS.md)
+
+# The operating confidence: the threshold at which detections are counted as panels.
+# Chosen on val by the declared rule (lowest panel-count MAE on the grid 0.05-0.95, the
+# lower confidence on a tie) from the val evaluation det_val_20261022T163802Z of the
+# selected model, run det_oppoint_20261022T193813Z. conf above stays 0.001: AP needs the
+# whole precision-recall curve.
+conf_operating: 0.25
+
+# The checkpoint the single test evaluation may read. The tuning pass (configs/
+# det_tuning.yaml) kept the baseline, yolov8n.pt with hsv_v 0.4, i.e. this file's model
+# and augmentation; the model taken forward is its seed 0 run, det_20261022T163213Z.
+# The checkpoint is not in git, so its SHA-256 pins it: scripts/eval_test_det.py
+# refuses any best.pt with another hash.
+checkpoint_sha256: 1bd7908cc646b5a4b0af5eaa23bd69cbc97b7a593af9c459cc19f71f9419976a
