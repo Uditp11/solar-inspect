@@ -768,3 +768,71 @@ Whole pass 23.1 min against a printed estimate of 20 min. No out-of-memory error
 (noise floor 0.005, every pair indistinguishable, baseline selected) under the rule as it stood at
 `9f774ae`, before the final clause of item 5 was added; with these scores the amended rule gives the
 same arm. None of it is a result.
+
+## Detection tuning pass: result
+
+`python scripts/tune_det.py` at `067f375`, clean tree, the twelve runs as declared above, all
+`done`, none retried. Every score is val AP@0.5:0.95, 101-point (= torchmetrics), on val, 51 images,
+4,929 boxes. Summary: `runs/det_tuning/summary.csv` and `summary.json`; logs in
+`runs/det_tuning/logs/`. Wall is train + val evaluation per run; the twelve add up to 5,685 s
+(94.8 min).
+
+| arm | seed | train run (`det_`) | eval run (`det_val_`) | epochs run (best) | wall | peak VRAM reserved | score, AP@0.5:0.95 | AP@0.5, 101-point | count MAE at conf 0.25 |
+|---|---|---|---|---|---|---|---|---|---|
+| yolov8n-hsv0.4 | 0 | 20261022T163213Z | 20261022T163802Z | 100 (81) | 389 s | 5,394 MiB | 0.824860 | 0.974546 | 1.88 |
+| yolov8n-hsv0.0 | 0 | 20261022T163843Z | 20261022T164156Z | 49 (29) | 274 s | 5,450 MiB | 0.812835 | 0.971613 | 4.98 |
+| yolov8s-hsv0.4 | 0 | 20261022T164317Z | 20261022T165512Z | 100 (81) | 757 s | 6,640 MiB | 0.837309 | 0.979037 | 2.14 |
+| yolov8s-hsv0.0 | 0 | 20261022T165554Z | 20261022T170932Z | 100 (83) | 851 s | 6,680 MiB | 0.835554 | 0.978592 | 2.41 |
+| yolov8n-hsv0.4 | 1 | 20261022T171005Z | 20261022T171842Z | 100 (89) | 556 s | 6,044 MiB | 0.833398 | 0.977292 | 1.59 |
+| yolov8n-hsv0.0 | 1 | 20261022T171920Z | 20261022T172436Z | 59 (39) | 383 s | 6,044 MiB | 0.819432 | 0.972280 | 3.18 |
+| yolov8s-hsv0.4 | 1 | 20261022T172544Z | 20261022T173143Z | 51 (31) | 398 s | 7,092 MiB | 0.827413 | 0.974494 | 1.90 |
+| yolov8s-hsv0.0 | 1 | 20261022T173221Z | 20261022T173803Z | 41 (21) | 392 s | 7,096 MiB | 0.821958 | 0.968575 | 2.88 |
+| yolov8n-hsv0.4 | 2 | 20261022T173853Z | 20261022T174549Z | 84 (64) | 456 s | 5,606 MiB | 0.828999 | 0.975730 | 3.12 |
+| yolov8n-hsv0.0 | 2 | 20261022T174629Z | 20261022T175233Z | 70 (50) | 432 s | 5,604 MiB | 0.825891 | 0.974726 | 2.14 |
+| yolov8s-hsv0.4 | 2 | 20261022T175341Z | 20261022T175936Z | 58 (38) | 394 s | 6,568 MiB | 0.833746 | 0.978193 | 2.39 |
+| yolov8s-hsv0.0 | 2 | 20261022T180015Z | 20261022T180610Z | 42 (22) | 403 s | 6,402 MiB | 0.830430 | 0.978190 | 2.57 |
+
+Per arm, three seeds, mean and standard deviation (ddof 1); recomputed from `summary.csv`
+independently of the driver and equal to its `summary.json` `result`:
+
+| arm (val, 51 images, 4,929 boxes) | n | score mean | score std | AP@0.5 mean (std) | count MAE at 0.25 mean (std) |
+|---|---|---|---|---|---|
+| yolov8n-hsv0.4 (baseline) | 3 | 0.829086 | 0.004270 | 0.975856 (0.001378) | 2.20 (0.81) |
+| yolov8n-hsv0.0 | 3 | 0.819386 | 0.006528 | 0.972873 (0.001639) | 3.43 (1.44) |
+| yolov8s-hsv0.4 | 3 | 0.832823 | 0.005012 | 0.977241 (0.002416) | 2.14 (0.25) |
+| yolov8s-hsv0.0 | 3 | 0.829314 | 0.006866 | 0.975119 (0.005671) | 2.62 (0.24) |
+
+**Noise floor 0.010**: the largest std, 0.006866 (yolov8s-hsv0.0), rounded up to a multiple of 0.005.
+
+| pair, difference of mean scores | call |
+|---|---|
+| yolov8n-hsv0.4 - yolov8n-hsv0.0: +0.009700 | indistinguishable |
+| yolov8n-hsv0.4 - yolov8s-hsv0.4: -0.003737 | indistinguishable |
+| yolov8n-hsv0.4 - yolov8s-hsv0.0: -0.000229 | indistinguishable |
+| yolov8n-hsv0.0 - yolov8s-hsv0.4: -0.013437 | yolov8s-hsv0.4 above |
+| yolov8n-hsv0.0 - yolov8s-hsv0.0: -0.009928 | indistinguishable |
+| yolov8s-hsv0.4 - yolov8s-hsv0.0: +0.003508 | indistinguishable |
+
+**Selected: yolov8n-hsv0.4, the baseline**, by the first clause of rule 5: the highest-mean arm,
+yolov8s-hsv0.4, beats the baseline's mean by 0.003737, not by more than the floor of 0.010, so the
+baseline is kept. (The factor clause adopts nothing: the single change to `yolov8s.pt` is that same
+arm; the best arm has `hsv_v` 0.4, the baseline's level. The final clause does not apply: the gap to
+the best arm is the same 0.003737.) The model taken forward is the baseline's **seed 0 run,
+`det_20261022T163213Z`**, evaluated in `det_val_20261022T163802Z`. Its val evaluation is identical, down
+to every box and score in `predictions.npz`, to `det_val_20261022T110900Z`, the `max_det 3000` evaluation of the first
+fine-tune `det_20261022T073325Z` (same config, same seed): at seed 0 the training reproduced.
+`configs/det_yolo.yaml` needs no change of `model` or `hsv_v`.
+
+Read the other way, the pass is a measured null result: at three seeds the larger model and turning
+off brightness jitter move the score by less than the seed-to-seed spread, with one exception, the
+gap between the best and worst arms (yolov8s-hsv0.4 over yolov8n-hsv0.0, 0.013).
+
+**Stopped early (patience 20)**, 8 of 12 runs: yolov8n-hsv0.0 at all three seeds (49, 59, 70 epochs),
+yolov8n-hsv0.4 seed 2 (84), yolov8s-hsv0.4 seeds 1 and 2 (51, 58), yolov8s-hsv0.0 seeds 1 and 2
+(41, 42). The yolov8s runs of seeds 1 and 2 kept a best epoch between 21 and 38. Patience was
+declared unchanged for the pass, so this is part of what each arm is; it is also why the wall times
+differ by up to a factor of three within an arm.
+
+**Peak memory:** the yolov8s runs peaked at up to 7,096 MiB reserved, about 1,200 MiB above the
+2-epoch batch check (5,862 MiB), as the yolov8n full run had done relative to its smoke. No run ran
+out of memory; 8,188 MiB is the card's total.
