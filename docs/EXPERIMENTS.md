@@ -601,6 +601,7 @@ selects on mAP50-95. Full output: `runs/det_<run>/manifest.json`, `results.csv`,
 | 20261022T072913Z | `92a01b4` | no | `scripts/train_det.py` | smoke, `epochs=2` | 2 (2) | 85 s | not recorded | 0.00081 / 0.00016 |
 | 20261022T073134Z | `d4ea608` | no | `scripts/train_det.py` | smoke, `epochs=2`, after the manifest fix | 2 (2) | 67 s | 4,468 MiB | 0.00081 / 0.00016 |
 | 20261022T073325Z | `d4ea608` | no | `scripts/train_det.py` | full config, no overrides | 100 (81) | 803 s | 5,450 MiB | 0.9733 / 0.8213 |
+| 20261022T111038Z | `86aed25` | no | `scripts/train_det.py` | smoke, `model=yolov8s.pt epochs=2`, batch 16 (the tuning pass's batch check); smoke, scores not informative | 2 (2) | 54 s | 5,862 MiB | 0.00029 / 0.00006 |
 
 The first smoke run's peak VRAM was printed (4,478 MiB) but its manifest is from before the
 fix and is otherwise identical; the two smoke runs give the same numbers to five decimals.
@@ -736,3 +737,34 @@ the value on the grid 0.05, 0.10, ..., 0.95 that minimises panel-count MAE at NM
 NMS IoU threshold is swept from 0.3 to 0.8 in steps of 0.05 at that confidence, panel-count error
 against threshold. Both are val-only and run in the next block. Then the final config is committed
 and pushed, and the test split is evaluated once.
+
+## Detection tuning pass: driver smoke
+
+`python scripts/tune_det.py --smoke` at `9f774ae`, clean tree: the twelve runs of the pass, each at
+`epochs=1`, in the declared seed-major order, each trained by `scripts/train_det.py` and scored on val
+by `scripts/eval_val_det.py`. **Smoke, 1 epoch, scores not informative**: the run checks the driver's
+code paths (order, logging, resume, the end-of-pass block) and the peak memory per model, nothing
+else. A second invocation of the same command found all twelve complete and trained nothing (resume
+check). Summary: `runs/det_tuning_smoke/summary.csv` and `summary.json`; logs in
+`runs/det_tuning_smoke/logs/`. Val, 51 images, 4,929 boxes.
+
+| arm | seed | train run (`det_`) | eval run (`det_val_`) | git SHA | dirty | wall, train + eval | peak VRAM reserved | score, val AP@0.5:0.95 101-point |
+|---|---|---|---|---|---|---|---|---|
+| yolov8n-hsv0.4 | 0 | 20261022T111621Z | 20261022T111722Z | `9f774ae` | no | 119 s | 4,462 MiB | 0.000158 |
+| yolov8n-hsv0.0 | 0 | 20261022T111819Z | 20261022T111924Z | `9f774ae` | no | 134 s | 4,462 MiB | 0.000150 |
+| yolov8s-hsv0.4 | 0 | 20261022T112033Z | 20261022T112132Z | `9f774ae` | no | 119 s | 5,862 MiB | 0.000082 |
+| yolov8s-hsv0.0 | 0 | 20261022T112232Z | 20261022T112329Z | `9f774ae` | no | 115 s | 5,862 MiB | 0.000082 |
+| yolov8n-hsv0.4 | 1 | 20261022T112427Z | 20261022T112521Z | `9f774ae` | no | 113 s | 4,854 MiB | 0.000107 |
+| yolov8n-hsv0.0 | 1 | 20261022T112620Z | 20261022T112713Z | `9f774ae` | no | 109 s | 4,854 MiB | 0.000098 |
+| yolov8s-hsv0.4 | 1 | 20261022T112809Z | 20261022T112904Z | `9f774ae` | no | 100 s | 5,304 MiB | 0.003317 |
+| yolov8s-hsv0.0 | 1 | 20261022T112950Z | 20261022T113045Z | `9f774ae` | no | 101 s | 5,302 MiB | 0.003505 |
+| yolov8n-hsv0.4 | 2 | 20261022T113131Z | 20261022T113223Z | `9f774ae` | no | 109 s | 4,810 MiB | 0.000098 |
+| yolov8n-hsv0.0 | 2 | 20261022T113320Z | 20261022T113412Z | `9f774ae` | no | 109 s | 4,810 MiB | 0.000098 |
+| yolov8s-hsv0.4 | 2 | 20261022T113510Z | 20261022T113606Z | `9f774ae` | no | 129 s | 5,260 MiB | 0.002100 |
+| yolov8s-hsv0.0 | 2 | 20261022T113719Z | 20261022T113815Z | `9f774ae` | no | 126 s | 5,260 MiB | 0.002119 |
+
+Whole pass 23.1 min against a printed estimate of 20 min. No out-of-memory error; the largest peak,
+5,862 MiB, is the `yolov8s.pt` batch-16 figure of the batch check above. The end-of-pass block ran
+(noise floor 0.005, every pair indistinguishable, baseline selected) under the rule as it stood at
+`9f774ae`, before the final clause of item 5 was added; with these scores the amended rule gives the
+same arm. None of it is a result.
