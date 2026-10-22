@@ -114,9 +114,9 @@ the SHA-256 of the one checkpoint allowed to be evaluated;
 - **Test is far below val.** The same model scores AP@0.5 0.9745, AP@0.5:0.95 0.8249 and a count
   MAE of 1.88 on val (51 images, 4,929 boxes); the test intervals do not reach those values. Test
   is a later sortie of the same flight, held out to measure this kind of shift (ADR 0002), and
-  val, which chose the epoch, the model and the operating point, turned out optimistic by that
-  much. On test the count error is mostly over-counting (+19.7 panels per frame on average). The
-  cause is not established.
+  val chose the epoch, the model and the operating point, so its numbers were expected to be
+  optimistic; how much of the gap is each is not separated. On test the count error is mostly
+  over-counting (+19.7 panels per frame on average). The cause is not established.
 - **Tuning pass:** YOLOv8n against YOLOv8s, with and without brightness jitter, three seeds each,
   under a rule declared before the first run. No arm beat the baseline by more than the noise floor
   (0.010 in val AP@0.5:0.95), so the baseline YOLOv8n was kept.
