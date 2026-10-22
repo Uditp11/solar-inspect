@@ -946,3 +946,62 @@ added (chosen on val above), and `checkpoint_sha256
 refuses any checkpoint with another hash (the first fine-tune's `best.pt`, which gives identical val
 predictions, hashes to `583beee52ffe...` and is refused), as well as configs not in `origin/main` and
 a second test evaluation.
+
+## D2 detection: THE TEST EVALUATION, once, and not again
+
+**Config commits: `configs/det_yolo.yaml` [`83e51cb`](../../../commit/83e51cb), `configs/d2.yaml`
+[`9b95550`](../../../commit/9b95550)**, both in `origin/main` before `scripts/eval_test_det.py` read
+the test split; the script refuses otherwise, and printed both SHAs. Checkpoint
+`runs/det_20261022T163213Z/weights/best.pt`, SHA-256
+`1bd7908cc646b5a4b0af5eaa23bd69cbc97b7a593af9c459cc19f71f9419976a`, equal to the config's
+`checkpoint_sha256` (the script refuses any other file). Run `det_test_20261022T200544Z`, from
+`83e51cb`, clean tree, one Ultralytics pass at conf 0.001, NMS IoU 0.7, `max_det` 3000: 25,637
+detections, at most 1,504 on one frame, so no frame reached the cap. Test is sortie 4 of the sortie
+split (ADR 0002); val is sortie 2.
+
+Intervals: percentile bootstrap over images (63 test images resampled with replacement, 2,000
+resamples, seed 0) from this run's saved predictions only, `scripts/bootstrap_test_det.py`, run
+`det_boot_20261022T200914Z` from `89a40d2`. It checks that its per-image matching reproduces every
+point value below exactly. (A first run, `det_boot_20261022T200836Z` from `a50f1db`, computed only the
+two APs and the MAE; same draws, same intervals for those three.)
+
+| metric | **test, 63 images, 3,984 boxes** | 95% interval | val, same model, 51 images, 4,929 boxes |
+|---|---|---|---|
+| AP@0.5, 101-point (= torchmetrics) | **0.7552** | [0.6418, 0.8438] | 0.9745 |
+| AP@0.5:0.95, 101-point (= torchmetrics) | **0.5578** | [0.4675, 0.6374] | 0.8249 |
+| precision at conf 0.25 (operating), IoU 0.5 | **0.6025** | [0.4925, 0.6872] | 0.9703 |
+| recall at conf 0.25 (operating), IoU 0.5 | **0.7899** | [0.6969, 0.8637] | 0.9604 |
+| panel-count MAE at conf 0.25 (operating) | **25.48** | [19.65, 31.94] | 1.88 |
+| panel-count signed mean, min, max at 0.25 | +19.67, -100, +105 | | -0.98, -11, +6 |
+
+Beside the headline, test, 63 images, 3,984 boxes: AP@0.5 all-point **0.7571**; Ultralytics' AP@0.5
+**0.7562** and AP@0.5:0.95 **0.5569**. Ultralytics differs for the two reasons measured on val (it
+scores letterboxed boxes not clipped to the frame, and integrates its 101-point curve with the
+trapezoid rule); not re-measured on test, which would need its internal boxes from a second pass.
+From scratch minus torchmetrics: 0 at AP@0.5, 2e-16 at AP@0.5:0.95.
+
+The other two fixed confidences, test, 63 images, 3,984 boxes (no intervals; reported, not chosen):
+
+| conf | precision | recall | count MAE | signed mean | signed min, max |
+|---|---|---|---|---|---|
+| 0.10 | 0.5047 | 0.8429 | 45.06 | +42.37 | -83, +190 |
+| 0.25 | 0.6025 | 0.7899 | 25.48 | +19.67 | -100, +105 |
+| 0.50 | 0.7268 | 0.7126 | 14.10 | -1.24 | -154, +52 |
+
+The three test frames with more than 300 boxes, at conf 0.25: `DJI_20230213164450_0091` 512 boxes,
+456 counted (**-56**); `DJI_20230213164408_0083` 418, 462 (**+44**); `DJI_20230213164426_0087` 331,
+364 (**+33**).
+
+**What the gap says.** Test is far below val on every number, and the intervals do not reach the val
+values. Val did three jobs (epoch, arm and operating point), and its numbers were optimistic by an
+amount that is now measured, not small. The operating point did not transfer: on test the count error
+at 0.25 is mostly over-counting (+19.7 panels per frame on average), and 0.50 has the lower count MAE
+there. That is a fact about this test set, not a reason to change `conf_operating`: choosing it on
+test would make the test number a val number.
+
+One measurement made afterwards, from labels and these saved predictions, without a model pass: how
+much neighbouring ground-truth boxes overlap (median nearest-neighbour IoU per box). Train 0.222
+(128 of 138 frames with a median above 0.2), val **0.048** (14 of 51), test 0.148 (27 of 63). Rows that
+run diagonally across the frame make axis-aligned boxes overlap; val, the split that selected
+everything, is the one where they do least. Train has more of it than test, so this does not by itself
+explain the drop; the cause is not established here.
