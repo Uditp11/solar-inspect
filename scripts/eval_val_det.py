@@ -1,6 +1,10 @@
 """Evaluate a trained detection checkpoint on the val split.
 
     python scripts/eval_val_det.py runs/det_<run>/weights/best.pt
+    python scripts/eval_val_det.py runs/det_<run>/weights/best.pt max_det=3000
+
+`key=value` overrides after the weights path are applied over the config and
+recorded in `eval.json`, the same way `train_det.py` takes them.
 
 One Ultralytics validation pass with the config's `conf`, `iou` and `max_det`, then
 Ultralytics' mAP50 and mAP50-95, the from-scratch AP@0.5 (all-point and 101-point),
@@ -24,21 +28,27 @@ sys.path.insert(0, str(REPO / "src"))
 
 from solar_inspect.classification.train import git_state   # noqa: E402
 from solar_inspect.detection.evaluate import evaluate       # noqa: E402
+from train_det import overrides                              # noqa: E402
 
 CONFIG = "configs/det_yolo.yaml"
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
+    if not argv:
         raise SystemExit(__doc__)
     weights = Path(argv[0]).resolve()
+    over = overrides(argv[1:])
     sha, dirty = git_state()
     cfg = yaml.safe_load((REPO / CONFIG).read_text(encoding="utf-8"))
+    if set(over) - set(cfg):     # a mistyped key would be recorded but never applied
+        raise SystemExit(f"unknown config keys: {sorted(set(over) - set(cfg))}")
+    cfg.update(over)
     run = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     out = evaluate(weights, "val", cfg, REPO / "runs", f"det_val_{run}")
     out.update({"run": run, "git_sha": sha, "git_dirty": dirty, "config_path": CONFIG,
-                "config": cfg, "weights": weights.relative_to(REPO).as_posix()})
+                "overrides": over, "config": cfg,
+                "weights": weights.relative_to(REPO).as_posix()})
     dest = REPO / out["save_dir"]
     (dest / "eval.json").write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8",
                                     newline="\n")
