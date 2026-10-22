@@ -335,11 +335,44 @@ the lower count MAE (14.10, signed mean -1.24). That is reported and not adopted
 the confidence on test would turn the test number into a val number. The three test frames with
 more than 300 panels: 512 labelled, 456 counted (-56); 418, 462 (+44); 331, 364 (+33).
 
-**What is and is not established about the gap.** Drawn over the frames, the saved boxes show both
-failure directions: a frame of diagonal rows with 108 labelled panels and 213 counted boxes, many
-of them overlapping, and a frame where 12 of 112 panels are counted. Diagonal rows alone do not
-explain it, though: train has more neighbour overlap in its labels than test (median 0.222 against
-0.148), so the model has seen that geometry. The cause of the drop is not established here.
+**What is and is not established about the gap (post-hoc).** Everything in this paragraph and the
+list below was measured after the single test evaluation, from its saved predictions, the labels and
+the pixels, with no further model pass, and it changes no number above (ledger: "D2 detection:
+post-hoc error analysis of the test evaluation").
+
+- **Where the false positives are.** Of 2,076 false positives at conf 0.25, 1,251 are misplaced
+  boxes (best IoU with a label from 0.1 to 0.5) and 794 duplicates (IoU above 0.3 with a true
+  positive); 22 sit on background (IoU below 0.1 with every label) and 9 fit none of the three
+  classes. Per frame, +19.86 misplaced and +12.60 duplicate boxes, less 13.29 missed panels, make the
+  +19.67. Of the missed panels, 56% have a detection near them, at IoU 0.1 to 0.5.
+- **What the worst frames look like.** The six test frames with the largest count error and the two
+  worst val frames were drawn with every box classified, and checked by eye. The labels cover the
+  visible panels in all six test frames, and background boxes appear on only one of them (the
+  densest, 4 boxes), so missing labels are not supported as an explanation. Five of the six are close
+  views of rows that cross the frame steeply, near vertical, where the axis-aligned boxes of
+  neighbouring modules overlap heavily, in the labels as in the predictions. Four of those over-fire,
+  with stacks of overlapping boxes along each row; the fifth, with the same geometry, finds 12 of 112
+  panels. The val frames and the densest test frame show rows running nearly horizontally, with
+  small boxes that do not overlap.
+- **Per frame, the error follows box shape.** Over the 63 test frames, AP@0.5 rises with the median
+  box aspect ratio w/h (Spearman +0.57) and the signed count error falls with it (-0.49). The aspect
+  ratio is not separable from neighbour overlap: the two correlate at -0.75.
+- **The medians hide it; the tail shows it.** Train's labels overlap more than test's on the median
+  (neighbour IoU 0.222 against 0.148) and are squarer (aspect 1.32 against 1.67), which at first
+  suggested the model had seen this geometry. The difference is in the tail. With a cut declared
+  before measuring, a frame is steep when its median box has aspect ratio below 1.1: none of 136
+  train frames and none of 51 val frames is steep, against 22 of 63 test frames. Large steep boxes
+  (upper area tercile) are 1.8% of train labels and 14.3% of test labels.
+- **Test on steep frames and on the rest.** On the 22 steep frames AP@0.5 is 0.2253, with precision
+  0.24 and recall 0.45 at conf 0.25 and a count MAE of 48.95; they carry 71% of the net over-count.
+  On the other 41 frames AP@0.5 is 0.9223 and the count MAE 12.88. Large steep boxes are missed
+  68.9% of the time, large boxes that are not steep 2.7%.
+
+This is consistent with a change in row orientation relative to the camera between sorties, not
+separable from the neighbour overlap that comes with it; oriented boxes are the standard remedy and
+were not tried. What is not established: the 41 other test frames are still below val (AP@0.5 0.9223
+against 0.9745, count MAE 12.88 against 1.88), and how much of that remainder is val's optimism and
+how much is some other difference between sorties is not separated.
 
 ---
 
@@ -351,8 +384,10 @@ explain it, though: train has more neighbour overlap in its labels than test (me
 - **One camera, one geometry.** A drone camera at 640 x 512 looking down on the rows from above. A
   ground robot looking along a row sees panels at a different scale, angle and overlap, and nothing
   here measures that.
-- **Axis-aligned boxes.** Rows that cross the frame diagonally make neighbouring boxes overlap in the
-  labels themselves; the oriented-box formulation was not tried.
+- **Axis-aligned boxes.** Rows that cross the frame steeply make neighbouring boxes overlap in the
+  labels themselves, and that is where this detector fails: on the 22 test frames dominated by such
+  rows AP@0.5 is 0.2253, against 0.9223 on the other 41 (measured post-hoc). No training frame has
+  that geometry. The oriented-box formulation, the standard remedy, was not tried.
 - **Val was used three times**: for epoch selection inside each run, arm selection across runs, and
   the operating confidence. Its numbers are optimistic by an amount that is not separated from the shift between sorties.
 - **Not comparable to published D2 numbers**, because the published splits are contaminated and a

@@ -116,7 +116,15 @@ the SHA-256 of the one checkpoint allowed to be evaluated;
   is a later sortie of the same flight, held out to measure this kind of shift (ADR 0002), and
   val chose the epoch, the model and the operating point, so its numbers were expected to be
   optimistic; how much of the gap is each is not separated. On test the count error is mostly
-  over-counting (+19.7 panels per frame on average). The cause is not established.
+  over-counting (+19.7 panels per frame on average). Post-hoc, from the saved outputs and the
+  labels (no number above changes): the over-count is boxes beside labelled panels, duplicate or
+  misplaced (2,045 of 2,076 false positives), not boxes on background (22). The worst frames are
+  close views of rows crossing the frame steeply, where the axis-aligned boxes of neighbouring
+  panels overlap, and per-frame AP@0.5 follows box aspect ratio (Spearman +0.57). Frames whose
+  median box has aspect ratio w/h below 1.1: none of 136 in train, 22 of 63 in test. On those 22,
+  test AP@0.5 is 0.2253; on the other 41 it is 0.9223 (val 0.9745). This is consistent with a change
+  in row orientation relative to the camera between sorties, not separable from neighbour overlap;
+  oriented boxes are the standard remedy and were not tried.
 - **Tuning pass:** YOLOv8n against YOLOv8s, with and without brightness jitter, three seeds each,
   under a rule declared before the first run. No arm beat the baseline by more than the noise floor
   (0.010 in val AP@0.5:0.95), so the baseline YOLOv8n was kept.
