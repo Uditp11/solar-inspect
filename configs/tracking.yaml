@@ -1,0 +1,21 @@
+# D5 tracker settings, chosen on the development seeds (0-9) only, committed before any
+# held-out sequence is scored.
+#
+# Rule (docs/EXPERIMENTS.md, "D5 tracking metrics and sweep"): for each tracker, the grid
+# max_age {1, 3, 5, 10, 15} x min_hits {1, 3} x iou_gate {0.1, 0.3, 0.5}; lowest sum over
+# the seeds of |K - G|, ties to the higher sum of per-seed IDF1, then the smaller max_age.
+# Grid: runs/track_dev_20261022T235309Z/grid.json, scripts/track_flyover.py at d777597,
+# on run flyover_20261022T221314Z.
+#
+# Both choices sit at the grid's largest max_age. The grid is as declared and is not
+# extended after the fact.
+
+sort:          # sum |K - G| 204, sum IDF1 7.0829
+  max_age: 15
+  min_hits: 3
+  iou_gate: 0.1
+
+greedy:        # sum |K - G| 191, sum IDF1 7.0087
+  max_age: 15
+  min_hits: 3
+  iou_gate: 0.1
