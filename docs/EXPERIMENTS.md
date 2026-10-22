@@ -718,11 +718,18 @@ rule that computes it is what is fixed now.
 mean by more than the noise floor, keep the baseline. Each factor is judged the same way: the
 selected arm takes the baseline's `model` and `hsv_v`, and changes a factor to the other level only
 if (a) the arm with the highest mean has that level, and (b) the arm that differs from the baseline in
-that factor alone beats the baseline's mean by more than the noise floor. A difference exactly equal
-to the floor does not count as beating it. The selected arm's **seed 0** run is the model taken
+that factor alone beats the baseline's mean by more than the noise floor. Finally, if the arm this
+gives has a mean more than the noise floor below the highest-mean arm's, the highest-mean arm is
+taken instead. A difference exactly equal to the floor does not count as beating it. The selected arm's **seed 0** run is the model taken
 forward, never its best seed, which would be selecting on noise. The rule is applied only if all
 twelve runs completed; if any failed, the per-arm results are reported with their seed counts and
 the decision goes to the next block rather than being made on fewer seeds.
+
+*Added 22 Oct 2026, before any full-length arm ran* (only the 1-epoch smoke runs existed, and their
+scores carry no information): the "Finally" clause above. Without it, when the effect is an
+interaction the factor-by-factor rule can keep an arm clearly worse than the best one, for example
+the baseline when only (`yolov8s.pt`, 0.0) beats it, or (`yolov8s.pt`, 0.4) when (`yolov8s.pt`, 0.0)
+beats that by more than the floor.
 
 **6. What comes after, also fixed now.** On the selected model, on val: the operating confidence is
 the value on the grid 0.05, 0.10, ..., 0.95 that minimises panel-count MAE at NMS IoU 0.7; then the

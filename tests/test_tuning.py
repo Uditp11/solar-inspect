@@ -55,7 +55,19 @@ def test_both_changes_adopted_when_both_single_changes_beat_the_baseline():
     assert select_arm(means(0.820, 0.830, 0.840, 0.850), ARMS, BASE, 0.005) == "yolov8s-hsv0.0"
 
 
-def test_only_the_combination_beating_the_baseline_keeps_the_baseline():
-    # the literal reading of "each factor is judged the same way": neither single change
-    # beats the baseline by more than the floor, so neither is adopted
-    assert select_arm(means(0.820, 0.823, 0.823, 0.840), ARMS, BASE, 0.005) == BASE
+def test_only_the_combination_beating_the_baseline_selects_the_combination():
+    # neither single change beats the baseline by more than the floor, so the factor
+    # loop keeps the baseline; the best arm beats it by 0.020 > 0.005, so the final
+    # clause takes the best arm
+    assert select_arm(means(0.820, 0.823, 0.823, 0.840), ARMS, BASE, 0.005) == "yolov8s-hsv0.0"
+
+
+def test_an_adopted_single_change_gives_way_to_a_best_arm_beyond_the_floor():
+    # model alone: 0.840 - 0.820 = 0.020, adopted; hsv_v alone: 0.003, not adopted.
+    # The loop gives yolov8s-hsv0.4 (0.840); the best arm (0.850) beats it by 0.010 > 0.005
+    assert select_arm(means(0.820, 0.823, 0.840, 0.850), ARMS, BASE, 0.005) == "yolov8s-hsv0.0"
+
+
+def test_the_final_clause_also_needs_more_than_the_floor():
+    # loop gives yolov8s-hsv0.4 (0.840); best 0.845 is exactly 0.005 above it: not taken
+    assert select_arm(means(0.820, 0.823, 0.840, 0.845), ARMS, BASE, 0.005) == "yolov8s-hsv0.4"
