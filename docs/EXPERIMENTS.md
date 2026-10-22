@@ -875,3 +875,63 @@ it. The extremes away from 0.25 are the 584-box frame `DJI_20230213154730_0155` 
 at 0.50); at 0.25 the worst frame is 11 short of 212. The curve is flat between 0.20 and 0.25 in MAE (2.04, 1.88) but not in sign: 0.20 is
 unbiased on average (+0.04), 0.25 slightly under (-0.98). The rule picks on MAE alone, as declared.
 Chosen on val, which has now also selected the epoch and the arm.
+
+## Detection NMS IoU sweep, on val
+
+Declaration item 6, second half: reported, not used to choose. **`iou` stays 0.7.** Selected model
+`det_20261022T163213Z`, conf 0.25 (the operating confidence above), `max_det` 3000, one Ultralytics
+validation pass per threshold through `evaluate()`: `scripts/nms_sweep_det.py`, run
+`det_nms_sweep_20261022T194018Z`, from `aabbd61`, clean tree. The detections a pass returns are the
+panels it counts. Figure (count MAE and signed mean against NMS IoU):
+`runs/det_nms_sweep_20261022T194018Z/count_error_vs_nms_iou.png`. Val, 51 images, 4,929 boxes.
+
+| NMS IoU (val, 51 images, 4,929 boxes) | count MAE | signed mean | signed min, max | detections | frames whose count differs from 0.7 | count MAE without the 584-box frame | that frame's signed error |
+|---|---|---|---|---|---|---|---|
+| 0.30 | 3.490 | -3.216 | -81, +3 | 4,765 | 16 | 1.94 | -81 |
+| 0.35 | 3.275 | -2.922 | -75, +3 | 4,780 | 14 | 1.84 | -75 |
+| 0.40 | 3.157 | -2.765 | -70, +3 | 4,788 | 13 | 1.82 | -70 |
+| 0.45 | 3.039 | -2.647 | -65, +3 | 4,794 | 13 | 1.80 | -65 |
+| 0.50 | 2.922 | -2.373 | -58, +3 | 4,808 | 12 | 1.82 | -58 |
+| 0.55 | 2.784 | -2.039 | -48, +4 | 4,825 | 8 | 1.88 | -48 |
+| 0.60 | 2.471 | -1.725 | -34, +4 | 4,841 | 8 | 1.84 | -34 |
+| 0.65 | 2.235 | -1.490 | -25, +4 | 4,853 | 5 | 1.78 | -25 |
+| **0.70** | **1.882** | -0.980 | -11, +6 | 4,879 | 0 | 1.82 | -5 |
+| 0.75 | 2.176 | +0.020 | -8, +22 | 4,930 | 16 | 1.78 | +22 |
+| 0.80 | 3.412 | +1.529 | -7, +75 | 5,007 | 24 | 1.98 | +75 |
+
+The 0.70 row equals the operating-point table's 0.25 row (a pass at conf 0.25 against filtering the
+conf 0.001 pass at 0.25), which checks the filtering argument of `operating_point_det.py` on counts.
+
+**Against section 6.2's claim.** On 50 of the 51 frames the claim holds as measured: count MAE stays
+between 1.78 and 1.98 from 0.30 to 0.80. The whole shape of the curve is one frame,
+`DJI_20230213154730_0155` (584 panels, median box 25 x 12 px against 54 x 31 px on the other frames),
+whose count runs from 81 short at 0.30 to 75 over at 0.80. Its ground-truth boxes barely overlap
+(nearest-neighbour IoU median 0.059, maximum 0.29), but its predicted boxes do: of the boxes kept at
+0.70, 29.5% overlap another kept box at IoU > 0.3, against 2.0% on the other 50 frames. So the
+edge-sharing premise is true of the labels everywhere and of the predictions on normal frames; on
+small, densely packed panels a few pixels of localisation error is a large fraction of the box, and
+the predicted boxes of neighbours overlap enough that a low threshold suppresses real panels and a high
+one keeps duplicates. On the whole of val, ground-truth neighbours are not at IoU exactly 0 either:
+99.5% of the 4,929 boxes overlap their nearest neighbour a little (median 0.048), 26 pairs exceed 0.3,
+none 0.5.
+
+### Cross-check: the from-scratch NMS on the same detections
+
+`scripts/nms_crosscheck_det.py`, run `det_nms_xcheck_20261022T195450Z`, from `8d8ab7a`, clean tree,
+about 10 minutes of the 45-minute cap. The boxes before NMS are copied from inside one Ultralytics
+validation pass at conf 0.25 by wrapping `non_max_suppression` (the exact tensor the library
+suppresses: letterboxed, not clipped, the model's own precision, candidates with score strictly
+above conf as the library filters); `solar_inspect.detection.nms.nms` is applied to each image's
+candidates and its per-image count compared with the sweep's Ultralytics pass at the same threshold.
+Ultralytics' NMS here is `torchvision.ops.nms`. 40,488 candidates over the 51 val images.
+
+| NMS IoU (val, 51 images) | from scratch, detections | Ultralytics, detections | images with equal counts |
+|---|---|---|---|
+| 0.3 | 4,765 | 4,765 | 51 / 51 |
+| 0.5 | 4,808 | 4,808 | 51 / 51 |
+| 0.7 | 4,879 | 4,879 | 51 / 51 |
+
+Equal on every image at all three thresholds: the from-scratch NMS reproduces the library's on real
+detections. The first run of the script (`det_nms_xcheck_20261022T194625Z`, at `2ccc4b6`) stopped
+before comparing: the validator calls NMS once before its loop, which shifted the pairing of captured
+inputs to batches by one and matched 36 of 51 images; fixed in `8d8ab7a`.
