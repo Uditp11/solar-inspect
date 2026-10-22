@@ -41,6 +41,22 @@ R_CENTRE = 1.0       # a detector's box centre is its most reliable part
 R_SHAPE = 10.0       # its area and aspect ratio wobble more than its centre
 
 
+def box_to_z(box: np.ndarray) -> np.ndarray:
+    """xyxy box(es) (..., 4) -> measurement [u, v, s, r]."""
+    b = np.asarray(box, dtype=float)
+    w, h = b[..., 2] - b[..., 0], b[..., 3] - b[..., 1]
+    return np.stack([b[..., 0] + w / 2, b[..., 1] + h / 2, w * h, w / h], axis=-1)
+
+
+def z_to_box(x: np.ndarray) -> np.ndarray:
+    """Measurement or state (..., >= 4) -> xyxy box(es). w = sqrt(s r), h = s / w."""
+    x = np.asarray(x, dtype=float)
+    u, v, s, r = x[..., 0], x[..., 1], x[..., 2], x[..., 3]
+    w = np.sqrt(s * r)
+    h = s / w
+    return np.stack([u - w / 2, v - h / 2, u + w / 2, v + h / 2], axis=-1)
+
+
 def default_P0() -> np.ndarray:
     return np.diag([P0_POS] * 4 + [P0_VEL] * 3)
 
@@ -69,7 +85,16 @@ def transition(dt: float = 1.0) -> np.ndarray:
 
 def predict(x: np.ndarray, P: np.ndarray, Q: np.ndarray,
             dt: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
-    """Prior for the next step: x' = F x, P' = F P F^T + Q. Q is per step, as in SORT."""
+    """Prior for the next step: x' = F x, P' = F P F^T + Q. Q is per step, as in SORT.
+
+    Area clamp, SORT's: if the area velocity would carry s to zero or below, it is
+    zeroed first, so a shrinking box coasts at its last positive area instead of
+    turning into a negative area and a NaN width in z_to_box.
+    """
+    x = np.asarray(x, dtype=float)
+    if x[2] + dt * x[6] <= 0:
+        x = x.copy()
+        x[6] = 0.0
     Fd = transition(dt)
     return Fd @ x, Fd @ P @ Fd.T + Q
 

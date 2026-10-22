@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from solar_inspect.tracking.kalman import (default_P0, default_Q, initial_state, predict,
-                                           update)
+from solar_inspect.tracking.kalman import (box_to_z, default_P0, default_Q, initial_state,
+                                           predict, update, z_to_box)
 
 U0, V0, S0, R0 = 100.0, 50.0, 400.0, 1.6
 VEL = np.array([3.0, -2.0, 20.0])
@@ -122,3 +122,35 @@ def test_update_with_R_to_infinity_leaves_the_prediction_unchanged():
     xu, Pu = update(x, P, z, 1e12 * np.eye(4))
     np.testing.assert_allclose(xu, x, rtol=0, atol=1e-6)
     np.testing.assert_allclose(Pu, P, rtol=1e-6, atol=1e-6)
+
+
+def test_a_shrinking_box_is_never_predicted_past_zero_area():
+    # s = 100, s' = -30, coasting with no updates (Q = 0):
+    #   100 -> 70 -> 40 -> 10, and next 10 - 30 = -20 <= 0, so the area velocity is
+    #   zeroed first (SORT) and s stays 10 from then on.
+    x = np.array([50.0, 50.0, 100.0, 1.0, 0.0, 0.0, -30.0])
+    P, Q = np.eye(7), np.zeros((7, 7))
+    areas = []
+    for _ in range(5):
+        x, P = predict(x, P, Q)
+        areas.append(x[2])
+    assert areas == [70.0, 40.0, 10.0, 10.0, 10.0]
+    assert x[6] == 0.0
+
+    # Not clamped while the prediction stays positive: 100 - 50 = 50, s' kept.
+    x, _ = predict(np.array([50.0, 50.0, 100.0, 1.0, 0.0, 0.0, -50.0]), np.eye(7), Q)
+    assert (x[2], x[6]) == (50.0, -50.0)
+
+
+def test_box_to_z_and_back():
+    # [10, 20, 50, 45]: w 40, h 25 -> u 30, v 32.5, s 40 * 25 = 1000, r 40 / 25 = 1.6
+    box = np.array([10.0, 20.0, 50.0, 45.0])
+    z = box_to_z(box)
+    np.testing.assert_allclose(z, [30.0, 32.5, 1000.0, 1.6], rtol=0, atol=1e-12)
+    np.testing.assert_allclose(z_to_box(z), box, rtol=0, atol=1e-9)
+    # A full state converts too (its velocities are ignored), and so does a batch.
+    np.testing.assert_allclose(z_to_box(np.r_[z, 1.0, 2.0, 3.0]), box, rtol=0, atol=1e-9)
+    rng = np.random.default_rng(0)
+    lt = rng.uniform(0, 600, (50, 2))
+    boxes = np.column_stack([lt, lt + rng.uniform(1, 80, (50, 2))])
+    np.testing.assert_allclose(z_to_box(box_to_z(boxes)), boxes, rtol=0, atol=1e-9)
