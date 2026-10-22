@@ -11,6 +11,9 @@ that IoU is **>= iou_thr**; otherwise it is a false positive. A second detection
 an already matched ground truth is therefore a false positive (unless another
 unmatched one qualifies, which is COCO's rule; VOC's devkit takes the best ground
 truth overall and calls the detection a false positive if that one is taken).
+On an exact IoU tie between two unmatched ground truths the lower index wins;
+pycocotools' loop keeps the last, which is one of the reasons the two can differ
+when ground truths overlap one another.
 
 Integration. Precision and recall are taken at every rank, precision is replaced by
 its envelope (the running maximum from the right, so it is monotone

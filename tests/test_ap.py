@@ -89,6 +89,16 @@ def test_match_takes_the_best_unmatched_ground_truth_not_the_best_overall():
     assert match(det, [np.array([0.9, 0.8])], gt)[1].tolist() == [True, True]
 
 
+def test_an_exact_iou_tie_between_ground_truths_goes_to_the_lower_index():
+    # g1 = [0,0,10,10], g2 = [2,0,12,10]
+    # d1 [1,0,11,10] 0.9: inter 9 x 10 = 90, union 110 with both -> exact tie, takes g1
+    # d2 [-3,0,7,10] 0.8: g1 70/130 = 0.538 (taken), g2 50/150 = 0.333 -> FP
+    # (pycocotools' loop keeps the last tied ground truth, g2, and would make d2 a TP.)
+    gt = [np.array([[0, 0, 10, 10], [2, 0, 12, 10]], dtype=float)]
+    det = [np.array([[1, 0, 11, 10], [-3, 0, 7, 10]], dtype=float)]
+    assert match(det, [np.array([0.9, 0.8])], gt)[1].tolist() == [True, False]
+
+
 def test_iou_exactly_one_half_is_a_match():
     # [0,0,10,10] vs [0,0,10,5]: inter 50, union 100 -> exactly 0.5, matched under >=
     gt = [np.array([[0, 0, 10, 10]], dtype=float)]
