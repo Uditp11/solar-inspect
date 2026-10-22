@@ -19,11 +19,12 @@ Integration. Precision and recall are taken at every rank, precision is replaced
 its envelope (the running maximum from the right, so it is monotone
 non-increasing in rank), and then:
 
-- `method="all"`: all-point interpolation (VOC 2010+), the sum over recall steps of
-  the step width times the envelope there. The primary number.
-- `method="101"`: COCO's 101-point interpolation, the mean of the envelope at the
-  first rank whose recall reaches r, for r = 0, 0.01, ..., 1, and 0 where recall
-  never reaches r. Used for the cross-check against torchmetrics.
+- `method="all"`: all-point interpolation, the VOC (2010+) definition: the sum over
+  recall steps of the step width times the envelope there.
+- `method="101"`: 101-point interpolation, the COCO definition and the one used for
+  the headline number: the mean of the envelope at the first rank whose recall
+  reaches r, for r = 0, 0.01, ..., 1, and 0 where recall never reaches r. It is
+  also the one torchmetrics computes, so it is the one cross-checked against it.
 
 No detections gives AP 0. No ground truth anywhere leaves AP undefined, and NaN is
 returned.

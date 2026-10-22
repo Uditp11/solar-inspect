@@ -5,7 +5,7 @@ one, in that order, is matched to the highest-IoU still-unmatched ground truth i
 its own image with IoU >= 0.5, else it is a false positive. So a second detection
 on an already matched ground truth is a false positive. Precision is replaced by
 its envelope (running max from the right), then integrated either at every recall
-step ("all", the primary) or at the 101 recall points 0, 0.01, ..., 1 ("101", COCO).
+step ("all", VOC) or at the 101 recall points 0, 0.01, ..., 1 ("101", COCO, the headline).
 
 The two-image toy, worked by hand. Ground truth: image A has gA1 = [0,0,10,10] and
 gA2 = [20,0,30,10]; image B has gB1 = [0,0,10,10]. So n_gt = 3, and gA2 is never
