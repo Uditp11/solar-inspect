@@ -649,3 +649,36 @@ rule give the same 4,836 TPs on the json boxes.
 (`DJI_20230213154730_0155`) returns exactly 1,000 detections at `conf 0.001`, the lowest kept at
 0.00388, so its tail below that score is truncated. It does not touch any confidence threshold in
 the table above; its effect on AP is limited to that tail and was not measured.
+
+### Re-evaluation of the same checkpoint at `max_det 3000`
+
+Same checkpoint (`det_20261022T073325Z/weights/best.pt`), same pass settings except the override
+`max_det=3000`, `scripts/eval_val_det.py`. Val, 51 images, 4,929 boxes.
+
+| run | git SHA | dirty | what ran | detections | on `DJI_20230213154730_0155` (584 boxes) | max per image |
+|---|---|---|---|---|---|---|
+| det_val_20261022T074726Z | `d4ea608` | no | `max_det 1000` (the evaluation above) | 14,056 | 1,000 (the cap), lowest 0.00388 | 1,000 |
+| det_val_20261022T105551Z | `28e4e6f` | no | `max_det=3000`, reference still capped at 1000 | 14,313 | 1,257, lowest 0.00100 | 1,257 |
+| det_val_20261022T110900Z | `5b9b346` | no | `max_det=3000`, reference capped at `max_det` | 14,313 | 1,257, lowest 0.00100 | 1,257 |
+
+| metric (val, 51 images, 4,929 boxes) | `max_det 1000` | `max_det 3000` |
+|---|---|---|
+| TP at IoU 0.5 | 4,836 | 4,849 |
+| AP@0.5, from scratch 101-point | 0.973185 | 0.974546 |
+| AP@0.5, torchmetrics | 0.973185 | 0.974546 |
+| AP@0.5, from scratch all-point | 0.977807 | 0.979162 |
+| AP@0.5:0.95, from scratch 101-point | 0.824685 | 0.824860 |
+| AP@0.5:0.95, torchmetrics | 0.824685 | 0.824860 |
+| AP@0.5 / AP@0.5:0.95, Ultralytics | 0.973270 / 0.822093 | 0.973270 / 0.822093 |
+
+Precision, recall and panel-count error at conf 0.1, 0.25 and 0.5 are identical in both runs (the
+extra 257 detections all score below 0.00388), so the operating-point table above stands.
+
+Three things came out of it. **The cap was binding on AP**: the 257 extra detections on the dense
+frame add 13 true positives at IoU 0.5. **The torchmetrics reference had its own cap**: the first
+re-evaluation (`105551Z`) still read torchmetrics at 1000 detections per image, and showed a
+from-scratch-minus-torchmetrics gap of +1.4e-3 at AP@0.5 and +1.8e-4 at AP@0.5:0.95 that was the
+reference truncating its input. Fixed in `5b9b346` (the reference takes the evaluation's
+`max_det`); the second re-evaluation agrees exactly. **Ultralytics' own numbers did not move** to
+six decimals, although its `predictions.json` carries the 1,257 detections. Not explained; not
+pursued, since no number taken forward depends on it. `max_det` was raised to 3000 in `19495cc`.
