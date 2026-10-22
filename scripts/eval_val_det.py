@@ -49,7 +49,11 @@ def main(argv: list[str]) -> int:
     print(f"AP@0.5     Ultralytics {u['map50']:.4f} | from scratch all-point "
           f"{out['ap50_all_point']:.4f}, 101-point {out['ap50_101_point']:.4f} | "
           f"torchmetrics {tm['map_50']:.4f}")
-    print(f"AP@0.5:0.95 Ultralytics {u['map50_95']:.4f} | torchmetrics {tm['map_50_95']:.4f}")
+    print(f"AP@0.5:0.95 Ultralytics {u['map50_95']:.4f} | from scratch 101-point "
+          f"{out['ap50_95_101_point']:.4f} | torchmetrics {tm['map_50_95']:.4f}")
+    print(f"from scratch minus torchmetrics, 101-point: AP@0.5 "
+          f"{out['ap50_101_point'] - tm['map_50']:+.1e}, AP@0.5:0.95 "
+          f"{out['ap50_95_101_point'] - tm['map_50_95']:+.1e}")
     print(f"Ultralytics P {u['precision']:.4f} R {u['recall']:.4f} (its own max-F1 confidence)")
     print(f"{'conf':>6}{'precision':>11}{'recall':>8}{'count MAE':>11}{'signed mean':>13}"
           f"{'signed range':>16}")

@@ -96,7 +96,8 @@ def main(argv: list[str]) -> int:
     print(f"AP@0.5     Ultralytics {u['map50']:.4f} | from scratch all-point "
           f"{out['ap50_all_point']:.4f}, 101-point {out['ap50_101_point']:.4f} | "
           f"torchmetrics {tm['map_50']:.4f}")
-    print(f"AP@0.5:0.95 Ultralytics {u['map50_95']:.4f} | torchmetrics {tm['map_50_95']:.4f}")
+    print(f"AP@0.5:0.95 Ultralytics {u['map50_95']:.4f} | from scratch 101-point "
+          f"{out['ap50_95_101_point']:.4f} | torchmetrics {tm['map_50_95']:.4f}")
     for c, r in out["at_conf"].items():
         print(f"conf {c}: precision {r['precision']:.4f} recall {r['recall']:.4f} "
               f"count MAE {r['count_mae']:.2f} signed mean {r['count_signed_mean']:+.2f}")

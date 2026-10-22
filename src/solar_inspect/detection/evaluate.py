@@ -2,7 +2,8 @@
 
 Ultralytics' validator runs inference once with the config's `conf`, `iou` and
 `max_det`, reports its own mAP50 and mAP50-95, and writes the boxes it scored to
-`predictions.json`. The from-scratch AP@0.5 (both interpolations), torchmetrics'
+`predictions.json`. The from-scratch AP@0.5 (both interpolations) and AP@0.5:0.95
+(101-point, averaged over ten IoU thresholds), torchmetrics'
 mAP@0.5 and mAP@0.5:0.95, precision, recall and panel-count error are then all
 computed from that same file, so the three AP numbers differ only in how they are
 computed, never in which predictions they see. The predictions are saved again as
@@ -21,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from solar_inspect.detection.ap import ap_from_matches, match
+from solar_inspect.detection.ap import ap_from_matches, match, mean_ap
 from solar_inspect.detection.count import count_error
 from solar_inspect.detection.data import REPO, ground_truth, splits
 from solar_inspect.detection.reference import torchmetrics_map
@@ -59,6 +60,7 @@ def evaluate(weights: Path, split: str, cfg: dict, project: Path, name: str) -> 
                         "precision": float(m.box.mp), "recall": float(m.box.mr)},
         "ap50_all_point": ap_from_matches(tp, n_gt, "all"),
         "ap50_101_point": ap_from_matches(tp, n_gt, "101"),
+        "ap50_95_101_point": mean_ap(boxes, scores, gts),
         "torchmetrics": tm,
         "at_conf": {},
     }
