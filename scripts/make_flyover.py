@@ -1,6 +1,11 @@
 """Generate the D5 flyover sequences and cache the shipped detector's detections on them.
 
-    python scripts/make_flyover.py runs/det_<run>/weights/best.pt
+    python scripts/make_flyover.py runs/det_<run>/weights/best.pt [--set NAME=VALUE]
+
+`--set` overrides one parameter for a sweep cell: a generator parameter
+(`FlyoverParams` field, e.g. pan_speed, occlusion_frames) or `conf`, the detector's
+confidence threshold. The committed config is otherwise used as is, and the override
+is recorded in the manifest.
 
 Reads `configs/flyover.yaml`, which must be tracked and unmodified: the config is
 declared before the sequences exist. Source frames come from the D2 val split only
@@ -27,7 +32,7 @@ import itertools
 import json
 import subprocess
 import sys
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -89,9 +94,15 @@ def overlay(seq: dict, det: dict, frames: list[int]) -> np.ndarray:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
+    if len(argv) not in (1, 3) or (len(argv) == 3 and argv[1] != "--set"):
         raise SystemExit(__doc__)
     weights = Path(argv[0]).resolve()
+    overrides = {}
+    if len(argv) == 3:
+        name, value = argv[2].split("=")
+        if name not in {f.name for f in fields(FlyoverParams)} | {"conf"}:
+            raise SystemExit(f"--set {name}: not a generator parameter or conf")
+        overrides[name] = float(value)
     cfg = yaml.safe_load((REPO / CONFIG).read_text(encoding="utf-8"))
     det_cfg_path = cfg["detector"]["config"]
     guard(CONFIG, det_cfg_path)
@@ -102,7 +113,7 @@ def main(argv: list[str]) -> int:
     weights_sha = check_checkpoint(weights, det_cfg.get("checkpoint_sha256"))
     print(f"checkpoint {weights.name} SHA-256 {weights_sha[:12]} = {det_cfg_path} checkpoint_sha256")
 
-    p = params_from(cfg)
+    p = replace(params_from(cfg), **{k: v for k, v in overrides.items() if k != "conf"})
     val_dir = splits()["val"]
     names, boxes = ground_truth(val_dir)
     order = np.random.default_rng(cfg["frame_assignment_seed"]).permutation(len(names))
@@ -112,7 +123,8 @@ def main(argv: list[str]) -> int:
 
     from ultralytics import YOLO, __version__ as ul_version
     model = YOLO(str(weights))
-    pred_kw = dict(imgsz=cfg["detector"]["imgsz"], conf=det_cfg["conf_operating"],
+    pred_kw = dict(imgsz=cfg["detector"]["imgsz"],
+                   conf=overrides.get("conf", det_cfg["conf_operating"]),
                    iou=det_cfg["iou"], max_det=det_cfg["max_det"],
                    device=cfg["detector"]["device"], verbose=False)
 
@@ -157,7 +169,7 @@ def main(argv: list[str]) -> int:
             cv2.imwrite(str(out / f"overlay_seed{seed}.png"), strip)
 
     manifest = {"run": run, "git_sha": sha, "git_dirty": dirty, "config_path": CONFIG,
-                "config": cfg, "params": asdict(p), "detector_config": det_cfg_path,
+                "config": cfg, "overrides": overrides, "params": asdict(p), "detector_config": det_cfg_path,
                 "detector": {**{k: v for k, v in pred_kw.items() if k != "verbose"},
                              "weights": weights.relative_to(REPO).as_posix(),
                              "weights_sha256": weights_sha, "ultralytics": ul_version},
