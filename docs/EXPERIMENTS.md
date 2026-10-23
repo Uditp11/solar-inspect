@@ -1898,6 +1898,13 @@ made average pooling). The trained base-32 net, linearised or not, measures the 
 
 ## D1 triage: work-order list from the saved test pass
 
+> **Amendment, 23 Oct 2026.** ADR 0006 moved Cracking from CoA 2 to CoA 3
+> [`2638974`](../../../commit/2638974), on reading PVFS 1-8 against D1's class definition; the
+> decision did not use these results. The CoA counts and rates, the Cracking row and the post-hoc
+> figures below are the first run's, kept as they were and **superseded**: see
+> [Amended: Cracking at CoA 3](#amended-cracking-at-coa-3). The dispatch, the threshold and the
+> extent counts do not change.
+
 Rule committed first in `configs/triage.yaml` [`b2d97a9`](../../../commit/b2d97a9); CoA table
 in ADR 0006 [`5e44e6c`](../../../commit/5e44e6c); `Triage` and `dispatch()`
 [`4cb1499`](../../../commit/4cb1499); `scripts/triage_d1.py` [`6c5cf4d`](../../../commit/6c5cf4d),
@@ -1954,7 +1961,39 @@ as the base-rate section measured, and the CoA is set by the fault.
 anomalous, not at field prevalence. Of the 328 test modules whose true class is a CoA 3 mode, 20
 are not dispatched at all.
 
+### Amended: Cracking at CoA 3
+
+ADR 0006 and `COA_TABLE` changed together in [`2638974`](../../../commit/2638974): Cracking is
+CoA 3, extent cell (unchanged), action "inspect; replace the module if the glass is broken". No
+other row, the dispatch rule and the threshold are unchanged. Run `triage_d1_20261023T175635Z` at
+`2638974`, clean; the order proof passes as before.
+
+**Dispatched: 1,417 of 3,007, 46.8 per 1,000 at 2.2%, unchanged.** The findings and the set of
+dispatched modules are identical to the first run's; the only work orders whose CoA or action
+changed are the 131 Cracking ones, and the extent counts are the same.
+
+| | dispatched | per 1,000 as counted | **per 1,000 at 2.2%** |
+|---|---:|---:|---:|
+| CoA 3 | 433 | 144.0 | **11.42** |
+| CoA 2 | 984 | 327.2 | **35.40** |
+
+CoA 3 is 302 + 131 Cracking (2.55 per 1,000 at 2.2%, precision at 2.2% 0.5182); CoA 2 is
+1,115 − 131. CoA 3 now holds work orders 1 to 433: Diode and Diode-Multi (substring) first, then
+Cracking, Hot-Spot and Hot-Spot-Multi (cell) by P(class). CoA 2 starts at 434 with the same
+Offline-Module orders as before.
+
+**Post-hoc, labelled post-hoc, changes no reported number.** Of the 433 CoA 3 dispatches, 379
+(87.5%) have a true class that is also a CoA 3 mode, now including Cracking; on D1 test's own
+class mix, not at field prevalence. Of the 470 test modules whose true class is a CoA 3 mode, 23
+are not dispatched at all.
+
 ## SQL layer: queries run on SQLite
+
+> **Amendment, 23 Oct 2026.** After the Cracking change, `scripts/sql_d4.py` was pointed at the
+> amended triage run [`7a8b298`](../../../commit/7a8b298) and re-run. Query 5's per-CoA split
+> and its CoA 2 dispatch ranks below are the first run's, **superseded**: see
+> [Amended: query 5 with Cracking at CoA 3](#amended-query-5-with-cracking-at-coa-3). Queries 1
+> to 4 are unchanged.
 
 Schema, the five queries, `analytics/sql.py` (build, query, a pandas equivalent per query) and
 `tests/test_sql.py` (hand-worked 17-row fixture) [`e29a16e`](../../../commit/e29a16e);
@@ -2003,3 +2042,15 @@ ih0vzX44oOqAx2f); in 4136001 two of three shared (daily: Quc1TzYxW2pYoWX 0.597, 
 Query 5, top 5 per CoA: CoA 3, dispatch 1 to 5, all Diode (`1998.jpg`, `1884.jpg`, `1168.jpg`,
 `1665.jpg`, `1835.jpg`, P(class) 0.9969 to 0.9935); CoA 2, dispatch 303 to 307, all
 Offline-Module (`719.jpg`, `494.jpg`, `757.jpg`, `545.jpg`, `774.jpg`, P(class) 0.9993 to 0.9971).
+
+### Amended: query 5 with Cracking at CoA 3
+
+Run `sql_d4_20261023T175705Z` at [`7a8b298`](../../../commit/7a8b298), clean, against
+`triage_d1_20261023T175635Z`. Every query equals its pandas equivalent. Queries 1 to 4 are
+identical to `sql_d4_20261023T172610Z` (their `sql.json` entries, and their rows re-queried on
+both databases), and so are the generation, weather, plant, inverter and finding tables;
+`coa_class` differs in the Cracking row only.
+
+Query 5: 1,417 work orders, 433 CoA 3 and 984 CoA 2, equal to the amended triage run's
+`work_orders.csv` row for row. Top 5 per CoA: CoA 3, dispatch 1 to 5, the same five Diode orders;
+CoA 2, dispatch 434 to 438, the same five Offline-Module orders.
