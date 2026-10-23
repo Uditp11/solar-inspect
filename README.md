@@ -1,13 +1,56 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (23 Oct 2026):** all five modules are finished: module 4 (classification), module 2
-> (detection), module 3 (tracking), module 1 (segmentation) and module 5 (analytics on plant
-> generation data, triage and SQL).
+> **Status: v1.0, 2026-10-23: all five modules finished.**
 
-The plan is four perception modules trained and benchmarked independently on public solar imagery,
-sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
-Metric primitives are written from scratch and unit-tested; the main models are fine-tuned
-from libraries. The seam between the two is stated below.
+Five stages of a solar (PV) plant inspection, each built and evaluated on its own public dataset:
+**1** segmentation of panel arrays in RGB rooftop tiles, **2** panel detection in thermal drone
+frames, **3** tracking panels across frames so each is counted once, **4** defect classification of
+thermal module crops, and **5** analytics on plant generation data, with triage into work orders and
+SQL. Modules 1, 2, 4 and 5 run on real data; module 3 runs on synthetic flyovers (D5) cut from real
+thermal frames and fed the real detector's output. IoU, NMS, AP, Dice, the U-Net, the Kalman
+filter, SORT, the regression and the triage are written from scratch and unit-tested; the detector (YOLOv8) and
+the classifier (ResNet-18) are fine-tuned from libraries ([the seam](#the-from-scratch-seam)). The three
+test splits (modules 1, 2 and 4) were each read once, after the config was committed. The imagery is 8-bit rendered, so nothing
+here is a temperature, and no power-loss figure is given.
+
+## Pipeline
+
+```mermaid
+flowchart TB
+  D3[("D3 PV01<br/>RGB rooftop tiles")] --> SEG["1 Segmentation<br/>U-Net"]
+  D2[("D2 thermal<br/>drone frames")] --> DET["2 Detection<br/>YOLOv8n"]
+  DET == "real detections on<br/>windows of D2 val frames" ==> D5[("D5 synthetic<br/>flyovers")]
+  D5 --> TRK["3 Tracking<br/>Kalman + SORT"]
+  D1[("D1 thermal<br/>module crops")] --> CLS["4 Classification<br/>ResNet-18"]
+  SEG -. "mask_rle" .-> F{{"Finding record"}}
+  DET -. "bbox, det_score" .-> F
+  TRK -. "track_id" .-> F
+  CLS == "saved test logits:<br/>defect_class, cls_confidence" ==> F
+  F == "dispatch rule" ==> T{{"Triage record<br/>CoA, extent, action"}}
+  D4[("D4 plant<br/>generation data")] --> REG["5 Regression and<br/>per-inverter analysis"]
+  D4 --> SQL["5 SQL on SQLite"]
+  REG == "inverter rankings" ==> SQL
+  T == "work orders" ==> SQL
+```
+
+Plain arrows are a dataset feeding its stage. Thick arrows carried real data in a run: one stage's
+saved output was the next stage's input. Dotted arrows are the shared contract only: the fields of
+[`Finding`](src/solar_inspect/contract.py) each stage would fill. **It is not end-to-end.** Each
+module runs on its own dataset (D1 to D4 are four unrelated sources), so no single flight goes from
+images to a work order; triage runs on module 4's findings only.
+
+## Headline results
+
+One number per module, copied from its section below; every number is in
+[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) with the commit it came from.
+
+| Module | Headline | Split and size |
+|---|---|---|
+| [1 · Segmentation](#results-module-1-segmentation) | U-Net IoU Brick / FlatConcrete / SteelTile **0.9101 / 0.7910 / 0.9778**, colour rule 0.3068 / 0.4350 / 0.3912 | 19 / 60 / 14 tiles (test, once) |
+| [2 · Detection](#results-module-2-detection) | AP@0.5 **0.7552**, 95% interval 0.6418 to 0.8438 | 63 imgs, 3,984 boxes (test, once) |
+| [3 · Tracking](#results-module-3-tracking) | ids for 705 true modules: no tracker 21,261, greedy IoU 1,035, SORT **1,103**; an implementation check on synthetic sequences, not a benchmark | 1,200 frames, seeds 100 to 119 (held-out) |
+| [4 · Classification](#results-module-4-classification) | macro-F1 **0.6956**, ResNet-18 fine-tuned | 3,007 imgs (test, once) |
+| [5 · Analytics](#results-module-5-analytics-on-plant-generation-data-triage-and-sql) | R², AC power on weather, Plant 1 / Plant 2 **0.9602 / 0.4354**, in-sample | 38,376 / 38,722 rows |
 
 ---
 
@@ -55,6 +98,15 @@ checkpoint allowed, was committed in [`49c44d9`](../../commit/49c44d9) before th
   colour, PV01 val tiles converted to greyscale, collapses it as well (val IoU 0.0407 / 0.0466 /
   0.0013 against 0.9074 / 0.9272 / 0.9455 in colour): the model needs colour, which is enough to
   explain the thermal result; resolution, viewpoint and content are not tested separately.
+
+![Median test tiles per subset: image, truth, U-Net prediction](docs/figures/seg_median_overlays.png)
+*The declared median test tile of each subset (Brick, FlatConcrete, SteelTile); green true positive, orange false positive, blue false negative. Source: `seg_overlays_20261023T153449Z`. Data: D3, PV01 (CC-BY-4.0), overlays added.*
+
+![The FlatConcrete roof with the missed pixels](docs/figures/seg_fc_bright_roof.png)
+*Post-hoc: on the 45-tile FlatConcrete test roof, the tile with the most missed pixels, from the saved masks of `seg_eval_test_20261023T153146Z`; the bright panel stretches are what is missed. Data: D3, PV01 (CC-BY-4.0), overlays added.*
+
+![Thermal transfer and the greyscale control](docs/figures/seg_transfer.png)
+*Top: the declared middle D2 val frame of the thermal check (`seg_thermal_20261023T153719Z`), no panel predicted. Bottom: the median FlatConcrete val tile of the greyscale control (`seg_grey_20261023T170737Z`). Data: D2, Thermal PV Panel Detection, and D3, PV01 (both CC-BY-4.0), overlays added.*
 
 The split is by scene, linked across all three subsets, with SteelTile cut into blocks and a guard
 band ([ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). The walkthrough is in
@@ -106,6 +158,12 @@ the SHA-256 of the one checkpoint allowed to be evaluated;
   without its one 584-panel frame it stays between 1.78 and 1.98 over the whole range. On that
   frame's small panels the predicted boxes of neighbours overlap where the labels do not.
 
+![Two test frames: a steep row and rows across the frame](docs/figures/det_test_frames.png)
+*Post-hoc: two of the six test frames with the largest count error, from the renders of `det_posthoc_20261022T214418Z`. Left, rows crossing the frame steeply, over-counted; right, rows across the frame. Green labelled boxes; blue true positives; orange duplicates; yellow localisation errors; red background; white unclassified; dashed magenta missed. Data: D2, Thermal PV Panel Detection (CC-BY-4.0), overlays added.*
+
+![Count error against detector confidence, val](docs/figures/det_count_vs_conf.png)
+*Val count error against the confidence threshold; 0.25 has the lowest count MAE. Source: `det_oppoint_20261022T193813Z`.*
+
 **These numbers are not comparable to a published D2 number**: the published splits are
 contaminated and are not used (see [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md)).
 
@@ -147,6 +205,12 @@ frames, detector conf 0.25):
   coasting 5 and 10 frames. So it does not explain why greedy wins; the effect of detector noise and
   of the assignment was not measured.
 
+![SORT on a synthetic flyover](docs/figures/track_flyover.gif)
+*Synthetic D5 held-out sequence, seed 100: SORT's reported boxes with their track ids, the occluder outlined in yellow; re-run by `scripts/make_figures.py`, which first checks its ids, ID switches and count error equal `track_sweep_20261022T235853Z`'s for this seed. Frames cut from D2, Thermal PV Panel Detection (CC-BY-4.0), overlays added.*
+
+![Count error against pan speed](docs/figures/track_sweep.png)
+*Held-out sweep, count error against pan speed, greedy IoU and SORT. Source: `track_sweep_20261022T235853Z`.*
+
 The hand-written ID-switch count equals motmetrics' on every sequence. Hypotheses that sit only on
 labelled panels failing the visibility rule (at the window edge or under the occluder) are dropped
 before scoring rather than counted as false positives. The walkthrough is in
@@ -177,6 +241,12 @@ The test number comes from one evaluation, of a config
 recall with supports, the confusion matrix and the full ablation are in
 [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md). **D1 ships no official split, so none of these
 numbers is comparable to a published one.**
+
+![Test confusion matrix](docs/figures/cls_confusion_test.png)
+*Confusion matrix of the single test pass, `cls_final_test_20260827T205903Z`. Data: D1, InfraredSolarModules (MIT); counts only.*
+
+![Reliability diagram, test](docs/figures/cls_reliability_test.png)
+*Reliability diagram of the same pass, raw and scaled by the softmax calibration constant T fitted on val (a calibration parameter, not a physical quantity).*
 
 **The classification rows carry a measured leakage bound, and it belongs here rather than
 in a footnote.** Val and test each contain ~4% of images with a ≥ 0.98 cosine neighbour in
@@ -229,6 +299,12 @@ smaller group and 87 a single inverter, concentrated at midday. The cleaning fin
 diagnostics, the confounders D4 can and cannot measure, and the IEC 61724 terms it lacks the
 inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
 
+![Per-inverter slopes](docs/figures/d4_slopes.png)
+*Per-inverter slope of AC power on irradiation with its 95% Newey-West interval, the plant median dashed. Source: `d4_rank_20261021T180327Z`. Data: D4, Solar Power Generation Data, which is not openly licensed: the figure shows derived statistics only, no row of the data.*
+
+![Residual autocorrelation](docs/figures/d4_acf.png)
+*Autocorrelation of the plant-level fit's residuals, the reason for the Newey-West and Driscoll-Kraay errors. Source: `d4_diag_20261021T162706Z`. D4, derived statistics only.*
+
 ### Triage and SQL
 
 | Module | Data | Metric | Value | Split size |
@@ -264,19 +340,18 @@ self-join) are written in the explainer and **not run**: no dataset here carries
 
 ## Scope: what this is and what it is not
 
-What has finished is module 4, module 2, module 3, module 1 and module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
-trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
-config was evaluated once on the held-out test split. Calibration, a base-rate correction
-and a distillation experiment followed, on val or on the saved outputs of that one test
-run. D2 was deduplicated and re-split by sortie, and D3 split by scene. On D2 a YOLOv8n fine-tune
-was selected on val and evaluated once on the held-out test sortie. On D3 a U-Net written from
-scratch was selected on val and evaluated once on the held-out test tiles, against a colour-threshold
-baseline and a null model. Module 3's trackers ran on D5, synthetic sequences built
-by moving a window over D2 val frames, fed the module 2 detector's real detections.
-
-Module 5 ran on D4, real generation data from two plants: a plant-level fit with its
-diagnostics, and per-inverter availability and performance rankings; its triage ran on the
-saved outputs of module 4's test pass, and its SQL layer over both.
+What has finished is all five modules, in pipeline order. Module 1: D3 was split by scene, and on
+it a U-Net written from scratch was selected on val and evaluated once on the held-out test tiles,
+against a colour-threshold baseline and a null model. Module 2: D2 was deduplicated and re-split by
+sortie, and a YOLOv8n fine-tune was selected on val and evaluated once on the held-out test sortie.
+Module 3: the trackers ran on D5, synthetic sequences built by moving a window over D2 val frames,
+fed the module 2 detector's real detections. Module 4: a small CNN written from scratch and an
+ImageNet ResNet-18 were trained on D1 thermal crops, on a split rebuilt after deduplication, and the
+ResNet-18 config was evaluated once on the held-out test split; calibration, a base-rate correction
+and a distillation experiment followed, on val or on the saved outputs of that one test run.
+Module 5 ran on D4, real generation data from two plants: a plant-level fit with its diagnostics,
+and per-inverter availability and performance rankings; its triage ran on the saved outputs of
+module 4's test pass, and its SQL layer over both.
 
 **It is not** an end-to-end pipeline: each module runs on its own dataset, joined by the `Finding`
 contract rather than by one run from a flight's images to a work order, and the segmentation module works on RGB rooftop tiles that no thermal stage shares. The tracking numbers come from synthetic sequences and check the implementation; they are
@@ -464,6 +539,17 @@ checks, and a measured look at the confounders. Then triage: a `Triage` record b
 ran; and an SQL layer of five queries on SQLite, each cross-checked against pandas. Every run
 is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
+
+## Explainers
+
+Plain technical design docs, one per module: what it is, why the stage exists, how it works,
+results, limits.
+
+- [01 Segmentation](docs/explainers/01-segmentation.md): the U-Net, the scene split, the colour rule, and why it does not transfer to thermal.
+- [02 Detection](docs/explainers/02-detection.md): IoU, NMS and AP from scratch, the YOLOv8n fine-tune, and the test-sortie gap.
+- [03 Tracking](docs/explainers/03-tracking.md): the Kalman filter, SORT, the D5 generator, and the metrics on synthetic sequences.
+- [04 Classification](docs/explainers/04-classification.md): the from-scratch CNN against ResNet-18, calibration, the base-rate correction and distillation.
+- [05 Analytics](docs/explainers/05-analytics.md): the regression and its diagnostics, the per-inverter analysis, triage by failure mode and the SQL layer.
 
 ---
 
