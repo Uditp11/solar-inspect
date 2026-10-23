@@ -77,14 +77,16 @@ def main() -> int:
     for p in (1, 2):
         g = d4.load(p)
         gens.append(g)
+        pid = int(g["PLANT_ID"].iloc[0])                 # 4135001 / 4136001, not 1 / 2
+        assert (g["PLANT_ID"] == pid).all()
         name = f"Plant_{p}_Weather_Sensor_Data.csv"
         wxs.append(d4.read(d4.D4 / name, d4.FORMATS[name]))
         dc = d4.dc_scale_check(g)
-        plants.append({"plant": p, "dc_power_misscaled": int(not dc["plausible"]),
+        plants.append({"plant": pid, "dc_power_misscaled": int(not dc["plausible"]),
                        "median_ac_dc": dc["median_ac_dc"]})
         t, _ = plant_tables(g, cfg)
         invs.append(pd.DataFrame({
-            "plant": p, "source_key": t.index, "slope": t["perf_slope"],
+            "plant": pid, "source_key": t.index, "slope": t["perf_slope"],
             "slope_ci_low": t["perf_ci_low"], "slope_ci_high": t["perf_ci_high"],
             "sister_ratio": t["sister_sister_ratio"], "sister_n": t["sister_n"].astype(int),
             "python_slope_rank": t["rank_slope"]}).reset_index(drop=True))
@@ -144,6 +146,8 @@ def main() -> int:
     q4 = sql.query(con, "04_sister_daily")
     r4 = same("04", q4, sql.sister_daily_pd(gen))
     m = q4.merge(inv[["plant", "source_key", "sister_ratio"]], on=["plant", "source_key"])
+    if len(m) != len(inv):
+        raise SystemExit(f"04: {len(m)} of {len(inv)} inverters joined to the sister ratios")
     rho = {int(p): float(stats.spearmanr(g["median_daily_ratio"], g["sister_ratio"])[0])
            for p, g in m.groupby("plant")}
     bottom = {int(p): {"daily": sorted(g.nsmallest(3, "median_daily_ratio")["source_key"]),
