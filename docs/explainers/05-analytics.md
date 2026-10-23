@@ -459,21 +459,25 @@ every row, or says where a row is the project's own assignment):
 | No-Anomaly | 1 | none | none |
 | Diode, Diode-Multi | 3 | substring | inspect bypass diode and junction box; replace module if faulty |
 | Hot-Spot, Hot-Spot-Multi | 3 | cell | inspect on site with a radiometric camera; replace if confirmed |
+| Cracking | 3 | cell | inspect; replace the module if the glass is broken |
 | Offline-Module | 2 | module | check wiring and connectors |
-| Cell, Cell-Multi, Cracking | 2 | cell | inspect; replace if damage confirmed |
+| Cell, Cell-Multi | 2 | cell | inspect; replace if damage confirmed |
 | Soiling | 2 | external | clean |
 | Vegetation | 2 | external | cut vegetation |
 | Shadowing | 2 | external | remove shade source |
 
 **CoA 3 goes to the modes that can be safety-relevant**: bypass-diode and junction-box
-failures can end in burn marks, arcing or fire (PVFS 1-15, p. 51; PVFS 1-14, p. 48), and
-so can hot spots (PVFS 1-19, p. 58). Whether a given finding *is* safety-relevant depends
-on a temperature difference this data cannot carry, so CoA 3 is an **upper bound**: it
-sends a crew with a radiometric camera to confirm it. Two rows are the project's
-assignment rather than the sources': Cell and Cell-Multi are single-cell hot spots, the
-mode the hot-spot sheet describes, kept at CoA 2 while thin-film Hot-Spot is at CoA 3;
-and Cracking, defined by the dataset as cracking on the module surface, would be CoA 3
-under the same rule if it is glass breakage (PVFS 1-8, p. 33).
+failures can end in burn marks, arcing or fire (PVFS 1-15, p. 51; PVFS 1-14, p. 48), so
+can hot spots (PVFS 1-19, p. 58), and broken glass compromises mechanical and electrical
+safety (PVFS 1-8, p. 33). Whether a given finding *is* safety-relevant depends on a
+measurement this data cannot carry, so CoA 3 is an **upper bound**: it sends a crew to
+confirm it, with a radiometric camera for the diode and hot-spot modes. Cracking, which the
+dataset defines as cracking on the module surface, is read as glass breakage; that reading
+is an inference from the dataset's definition, not something the dataset states. It was
+moved from CoA 2 to CoA 3 after the first triage run, on reading the fact sheet, not on the
+triage results. Two rows are the project's assignment rather than the sources': Cell and
+Cell-Multi are single-cell hot spots, the mode the hot-spot sheet describes, kept at CoA 2
+while thin-film Hot-Spot is at CoA 3.
 
 **Extent** orders work within a CoA: a whole module, then a substring, then a cell, then
 a cause outside the module.
@@ -514,22 +518,24 @@ base-rate correction's assumptions.
 | | dispatched | per 1,000 at 2.2% |
 |---|---:|---:|
 | **all** | **1,417** | **46.8** |
-| CoA 3 | 302 | 8.87 |
-| CoA 2 | 1,115 | 37.95 |
+| CoA 3 | 433 | 11.42 |
+| CoA 2 | 984 | 35.40 |
 | extent module / substring / cell / external | 103 / 249 / 661 / 404 | 5.33 / 5.55 / 19.21 / 16.73 |
 
-The first 302 work orders are CoA 3; the first five are all Diode at P(class) above 0.993.
-The CoA 2 list starts with Offline-Module, the one module-extent class.
+The first 433 work orders are CoA 3; the first five are all Diode at P(class) above 0.993,
+and the cell-extent CoA 3 orders (Cracking, Hot-Spot, Hot-Spot-Multi) follow the bypass-diode
+ones. The CoA 2 list starts with Offline-Module, the one module-extent class. The first run,
+with Cracking at CoA 2 (302 CoA 3, 1,115 CoA 2), stays in the ledger as superseded.
 
 **The CoA rests on the class, and the class is the weak half at field prevalence.** Per
-predicted class, precision at 2.2% (from module 4's base-rate table) is 0.60 for Diode and
-0.84 for Diode-Multi, but **0.19 for Hot-Spot and 0.26 for Hot-Spot-Multi**, two of the four
-CoA 3 classes. Whether a module is faulty survives the prevalence shift; which fault it has
-does not, and the CoA follows the fault.
+predicted class, precision at 2.2% (from module 4's base-rate table) is 0.60 for Diode,
+0.84 for Diode-Multi and 0.52 for Cracking, but **0.19 for Hot-Spot and 0.26 for
+Hot-Spot-Multi**, two of the five CoA 3 classes. Whether a module is faulty survives the
+prevalence shift; which fault it has does not, and the CoA follows the fault.
 
-**Post-hoc, changing no reported number:** of the 302 CoA 3 dispatches, 283 (93.7%) are
-truly a CoA 3 mode, on D1 test's own class mix rather than at field prevalence; of the 328
-test modules truly in a CoA 3 mode, 20 are not dispatched at all.
+**Post-hoc, changing no reported number:** of the 433 CoA 3 dispatches, 379 (87.5%) are
+truly a CoA 3 mode, on D1 test's own class mix rather than at field prevalence; of the 470
+test modules truly in a CoA 3 mode, 23 are not dispatched at all.
 
 ### SQL: why SQLite, and the schema
 
@@ -564,7 +570,7 @@ real data `scripts/sql_d4.py` stops on any difference beyond float rounding.
 | 2 `02_inverter_rank` | `RANK() OVER (PARTITION BY plant ORDER BY slope)` | 44 inverters | pandas, and the ranking code's own ranks: identical |
 | 3 `03_gaps` | steps over 15 minutes between an inverter's consecutive rows, by `LAG()`; count and missing intervals | every inverter has at least one gap; four 4136001 inverters 909 missing intervals each | pandas `diff()`: identical |
 | 4 `04_sister_daily` | each inverter's daily energy over its plant's median inverter that day, then the per-inverter median | 44 inverters | pandas: equal; Spearman with the per-timestamp sister ratio 0.983 and 0.932 |
-| 5 `05_work_orders` | findings at P(any) ≥ t joined to the CoA table, `ROW_NUMBER()` over the dispatch order, rank within CoA by `ROW_NUMBER() OVER (PARTITION BY coa ...)` | 1,417 work orders, 302 CoA 3 | pandas, and the triage run's CSV row for row |
+| 5 `05_work_orders` | findings at P(any) ≥ t joined to the CoA table, `ROW_NUMBER()` over the dispatch order, rank within CoA by `ROW_NUMBER() OVER (PARTITION BY coa ...)` | 1,417 work orders, 433 CoA 3 | pandas, and the triage run's CSV row for row |
 
 **Query 4 is a different statistic, and the disagreement is the result.** It sums every
 row of a day, dawn and dusk and zero-output intervals included, and takes a median over
@@ -659,9 +665,10 @@ between two frames, let alone two surveys.
   base-rate correction, not a count from a plant.
 - **No positions.** D1 crops carry no site, string or position, so the ranking has no
   string position and no count of affected modules, and the spatial queries are not run.
-- **CoA 3 is an upper bound by mode**, and two rows (Cell and Cell-Multi, Cracking) are the
-  project's assignment, not the sources'.
-- **The CoA inherits the classifier's confusions.** At 2.2% prevalence two of the four
+- **CoA 3 is an upper bound by mode**, two rows (Cell and Cell-Multi) are the project's
+  assignment, not the sources', and Cracking is read as glass breakage from the dataset's
+  class definition.
+- **The CoA inherits the classifier's confusions.** At 2.2% prevalence two of the five
   CoA 3 classes have per-class precision below 0.3.
 - **The dispatch threshold misses its target on test**: 0.429 precision at 2.2% against the
   0.50 it was chosen for on val.

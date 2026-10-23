@@ -92,21 +92,22 @@ inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analyti
 
 | Module | Data | Metric | Value | Split size |
 |---|---|---|---|---|
-| 5 · Triage | D1 | dispatches per 1,000 modules at 2.2% prevalence, threshold chosen on val | **46.8** (CoA 3: 8.87, CoA 2: 37.95) | 3,007 imgs (test, saved logits) |
-| 5 · Triage | D1 | work orders, CoA 3 / CoA 2 | 302 / 1,115 of 1,417 | 3,007 imgs (test, saved logits) |
-| 5 · Triage | D1 | precision @ 2.2% of the CoA 3 classes: Diode / Diode-Multi / Hot-Spot / Hot-Spot-Multi | 0.598 / 0.840 / 0.194 / 0.258 | 3,007 imgs (test, once) |
+| 5 · Triage | D1 | dispatches per 1,000 modules at 2.2% prevalence, threshold chosen on val | **46.8** (CoA 3: 11.42, CoA 2: 35.40) | 3,007 imgs (test, saved logits) |
+| 5 · Triage | D1 | work orders, CoA 3 / CoA 2 | 433 / 984 of 1,417 | 3,007 imgs (test, saved logits) |
+| 5 · Triage | D1 | precision @ 2.2% of the CoA 3 classes: Diode / Diode-Multi / Cracking / Hot-Spot / Hot-Spot-Multi | 0.598 / 0.840 / 0.518 / 0.194 / 0.258 | 3,007 imgs (test, once) |
 | 5 · SQL | D4, D1 findings | queries equal to their pandas equivalents | 5 of 5 | 136,472 generation rows · 44 inverters · 3,007 findings |
 | 5 · SQL | D4 | sister ratio on daily energy (SQL) vs per timestamp, Spearman | 0.983 / 0.932 | 22 / 22 inverters |
 
 **Triage** assigns each finding a Class of Abnormality (CoA 1 to 3) **by failure mode**, not
 from any pixel value, because the imagery carries no temperature; the table cites the public
 IEA-PVPS failure fact sheets per class ([ADR 0006](docs/adr/0006-coa-by-failure-mode.md)). CoA 3
-goes to the modes that can be safety-relevant (bypass diode, hot spot), so it is an upper bound
-that sends a crew with a radiometric camera to confirm it. Modules are flagged at the triage
+goes to the modes that can be safety-relevant (bypass diode, hot spot, broken glass), so it is
+an upper bound that sends a crew to confirm it, with a radiometric camera for the diode and
+hot-spot modes. Modules are flagged at the triage
 threshold chosen on val (module 4's row above), named by their most likely anomaly class, and
 ordered by CoA, extent and probability. No energy, power-loss or currency figure is attached
 to anything. The findings are rebuilt from the saved logits of module 4's single test pass,
-after proving their order against what that pass saved. Two of the four CoA 3 classes have
+after proving their order against what that pass saved. Two of the five CoA 3 classes have
 precision below 0.3 at field prevalence: whether a module is faulty survives the prevalence
 shift, which fault it has does not.
 
@@ -514,7 +515,7 @@ torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every e
 - Track on a real flyover. D2's frames do not overlap, so D5's sequences are synthetic; no real multi-frame thermal sequence was used.
 - Compare an ImageNet-pretrained encoder for the U-Net. Module 1 trains from scratch only, so what pretraining would gain on 445 training tiles is not measured.
 - Run the spatial queries. No dataset here carries coordinates, so the PostGIS queries in explainer 05 are written and not run, and the triage ranking has no string position or affected-module count.
-- Settle whether D1's Cracking class is glass breakage. ADR 0006 keeps it at CoA 2 as the project's assignment; if it is, the fact sheets would put it at CoA 3.
+- Cracking is read as glass breakage from the dataset's class definition (ADR 0006).
 
 ---
 
