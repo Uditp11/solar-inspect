@@ -1,0 +1,40 @@
+# D1 triage: the work-order list from the saved test pass. Declared before
+# scripts/triage_d1.py first runs. No model is run; the findings are rebuilt from the
+# logits the single test evaluation saved.
+source: runs/cls_final_test_20260827T205903Z/logits.npz
+
+# Calibration: the temperature fitted on val (docs/EXPERIMENTS.md, Calibration), read at
+# full precision from the run's posthoc.json and checked against this value.
+temperature: 2.0463
+
+# Flag a module when calibrated P(any anomaly) = 1 - P(No-Anomaly) >= t. t is the
+# threshold chosen on val for 50% precision at 2.2% prevalence
+# (configs/cls_triage_threshold.yaml), read from that run's output, not retyped. The
+# dispatch count must equal that run's test flag count, or the script stops.
+threshold_from: runs/cls_triage_threshold_20261023T171026Z/threshold.json
+
+# A flagged module's class is the argmax over the eleven anomaly classes, not over all
+# twelve, so a flagged module whose single largest probability is No-Anomaly still gets
+# an anomaly class; those are counted. The CoA, extent and action come from that class
+# (docs/adr/0006-coa-by-failure-mode.md).
+#
+# Order: CoA descending; then extent: module, substring, cell, external; then calibrated
+# P(class) descending; then image name ascending.
+order: [coa_desc, extent, p_class_desc, image]
+extent_order: [module, substring, cell, external]
+
+# delta_dn_uncalibrated = 99th-percentile DN minus median DN of the raw 8-bit crop
+# (numpy's linear percentile). Filled on every finding, NEVER used to rank: D1's crops
+# come from mixed sensors, so comparing it across crops would compare across frames.
+# It is an intra-crop contrast, not a temperature.
+delta_dn: {high_percentile: 99, low: median}
+
+# Rates per 1,000 modules are reported as counted on D1 test and reweighted to field
+# prevalence (0.022) under assumptions A1 and A2 of the base-rate correction. Per
+# predicted class, the precision at 2.2% is read from the existing per-class base-rate
+# table (posthoc.json), not recomputed.
+field_prevalence: 0.022
+
+# Post-hoc, labelled post-hoc, changes no reported number: the share of CoA 3 dispatches
+# whose true class is also a CoA 3 mode, and the number of true CoA 3 modules not
+# dispatched.
