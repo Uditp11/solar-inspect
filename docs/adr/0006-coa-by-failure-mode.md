@@ -57,7 +57,7 @@ glyphs. Class definitions are the dataset's own (InfraredSolarModules README).
 | Offline-Module | entire module is heated | 2 | module | check wiring and connectors | PVFS 1-19 (p. 59), example 1: one module warmer than the others, possibly open-circuited and not connected to the system, the module itself normally functional; remark: check wiring |
 | Cell | hot spot with square geometry in a single cell | 2 | cell | inspect; replace if damage confirmed | Action: PVFS 1-19 (p. 59), examples 7 and 8: one cell, or part of one, warmer than the rest; a shaded or defective cell; visual inspection and cleaning, replace the module where a defect is found. **CoA: project's assignment** (see Consequences) |
 | Cell-Multi | hot spots with square geometry in multiple cells | 2 | cell | inspect; replace if damage confirmed | as Cell; **CoA: project's assignment** |
-| Cracking | cracking on the module surface | 2 | cell | inspect; replace if damage confirmed | **Project's assignment** (see Consequences) |
+| Cracking | cracking on the module surface | 3 | cell | inspect; replace the module if the glass is broken | PVFS 1-8 (p. 33), glass breakage: "Mechanical and electrical safety is thus compromised"; corrective action: "All damaged modules have to be replaced". Reading D1's "cracking on the module surface" as glass breakage is an inference from the dataset's definition, not something the dataset states |
 | Soiling | dirt, dust or other debris on the module surface | 2 | external | clean | PVFS 1-20 (p. 61): an optical loss, reversible by cleaning; non-uniform soiling can cause hot spots that in extreme cases damage the module |
 | Vegetation | panels blocked by vegetation | 2 | external | cut vegetation | PVFS 3-3 (p. 75): shading is not itself a safety issue, though hot spots from prolonged shading can lead to follow-up failures; vegetation responsible for shading should be cut |
 | Shadowing | sunlight obstructed by vegetation, structures or adjacent rows | 2 | external | remove shade source | PVFS 3-3 (p. 75), as Vegetation; for fixed obstacles the sheet's actions are shading analysis and mitigation, so "remove shade source" is the project's wording |
@@ -73,23 +73,19 @@ area.
   `Triage` record has no field for one. The fact sheets quote loss ranges for some modes
   (about a third of a module for a short-circuited bypass diode); those are properties of
   the failure mode, not measurements of a finding, and the triage does not carry them.
-- **CoA 3 is an upper bound by mode.** Every Diode, Diode-Multi, Hot-Spot and Hot-Spot-Multi
-  dispatch is CoA 3, whatever its real severity; confirming it needs a radiometric
-  measurement on site.
-- **Two rows are the project's assignment, not the sources'.**
-  - *Cell and Cell-Multi at CoA 2.* D1's Cell class is a single-cell hot spot, the failure
-    mode PVFS 1-19 describes. That sheet says most modules with a single hot cell lose
-    insignificant power (p. 58), but its escalation path from overheating to burn marks and
-    fire applies to any hot spot, and PVFS 1-1 (p. 16) names a hot-spot and burn-mark risk
-    from inactive cell parts. The line between Cell (CoA 2) and Hot-Spot (CoA 3) is drawn
-    here, not in the sources: thin-film Hot-Spot is kept at the upper bound, crystalline
-    Cell is not.
-  - *Cracking at CoA 2.* D1 defines Cracking as cracking on the module surface. PVFS 1-1 is
-    about cracks in the cells, which are mostly invisible to the eye (p. 16), so it does not
-    describe this class. If the class is glass breakage, PVFS 1-8 (p. 33) says mechanical and
-    electrical safety are compromised and every damaged module has to be replaced, which by
-    this ADR's own rule would make it CoA 3. Which of the two D1's Cracking crops show is not
-    established.
+- **CoA 3 is an upper bound by mode.** Every Diode, Diode-Multi, Hot-Spot, Hot-Spot-Multi
+  and Cracking dispatch is CoA 3, whatever its real severity; confirming it needs a
+  radiometric measurement on site (for Cracking, a visual inspection of the glass).
+- **Two rows are the project's assignment, not the sources': Cell and Cell-Multi at CoA 2.**
+  D1's Cell class is a single-cell hot spot, the failure mode PVFS 1-19 describes. That
+  sheet says most modules with a single hot cell lose insignificant power (p. 58), but its
+  escalation path from overheating to burn marks and fire applies to any hot spot, and
+  PVFS 1-1 (p. 16) names a hot-spot and burn-mark risk from inactive cell parts. The line
+  between Cell (CoA 2) and Hot-Spot (CoA 3) is drawn here, not in the sources: thin-film
+  Hot-Spot is kept at the upper bound, crystalline Cell is not.
+- **Amended 2026-10-23:** Cracking moved from CoA 2 to CoA 3 after the first triage run, on
+  reading PVFS 1-8 against D1's class definition; the decision did not use the triage
+  results. The first run is kept as superseded.
 - **Classes, not findings, carry the CoA**, so the triage inherits the classifier's
   confusions. At field prevalence the classifier's per-class precision is low for several of
   the classes the CoA 3 rows rest on (docs/EXPERIMENTS.md, base-rate correction): the

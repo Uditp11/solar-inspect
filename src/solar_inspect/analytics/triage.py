@@ -34,7 +34,7 @@ COA_TABLE: dict[str, tuple[int, str, str]] = {   # class -> (CoA, extent, action
     "Offline-Module": (2, "module", "check wiring and connectors"),
     "Cell": (2, "cell", _CELL),
     "Cell-Multi": (2, "cell", _CELL),
-    "Cracking": (2, "cell", _CELL),
+    "Cracking": (3, "cell", "inspect; replace the module if the glass is broken"),
     "Soiling": (2, "external", "clean"),
     "Vegetation": (2, "external", "cut vegetation"),
     "Shadowing": (2, "external", "remove shade source"),

@@ -110,6 +110,18 @@ def test_extent_breaks_a_coa_tie_before_probability():
         ["y.jpg", "x.jpg"]
 
 
+def test_cracking_is_coa_3_and_dispatched_with_the_cell_extent_coa_3_rows():
+    # ADR 0006, amended: Cracking read as glass breakage (PVFS 1-8), CoA 3, extent cell.
+    # Order: Diode (3, substring), Cracking (3, cell), Offline-Module (2, module).
+    assert COA_TABLE["Cracking"] == (3, "cell", "inspect; replace the module if the glass is broken")
+    names = ["k.jpg", "m.jpg", "s.jpg"]
+    p = np.stack([row(Cracking=0.6, No_Anomaly=0.4), row(Offline_Module=0.99, No_Anomaly=0.01),
+                  row(Diode=0.55, No_Anomaly=0.45)])
+    sent = sorted(dispatch(names, p, CLASSES, 0.5), key=lambda r: r["triage"].dispatch_rank)
+    assert [(r["image"], r["triage"].coa, r["triage"].extent) for r in sent] == [
+        ("s.jpg", 3, "substring"), ("k.jpg", 3, "cell"), ("m.jpg", 2, "module")]
+
+
 def test_coa_table_covers_every_class_and_matches_adr_0006():
     assert set(COA_TABLE) == set(CLASSES)
     assert set(EXTENT_ORDER) == {"module", "substring", "cell", "external"}
