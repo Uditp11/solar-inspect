@@ -1,0 +1,60 @@
+# D3 (PV01) segmentation: the single test evaluation, declared before the test split is
+# read. scripts/eval_seg.py reads this file for val and for test; for test it refuses
+# unless this file is committed and the tree is clean, refuses a checkpoint whose
+# SHA-256 differs from the one below, and refuses if any test evaluation directory
+# already exists.
+
+# The model: the full run at c1f0e88, best.pt = the epoch with the highest mean of the
+# three per-subset val IoUs (configs/seg_unet.yaml).
+run: runs/seg_unet_20261023T145359Z
+checkpoint: best.pt
+checkpoint_sha256: 9a2653125d19df6c0883c8c6e0dacfcb42d651738558ae6c710bbfeae0bb8724
+selected_epoch: 87
+
+# Panel where sigmoid(logit) > 0.5, i.e. logit > 0. Fixed, not tuned on anything.
+threshold: 0.5
+amp: true            # float16 autocast, as in training's val pass
+eval_batch_size: 32
+
+# Compared with, on the same tiles:
+# - the colour rule from configs/seg_baseline.json, unchanged (panel where 2B-R-G >= 24,
+#   chosen on train);
+# - the null model, all background (IoU 0; pixel accuracy = 1 - foreground fraction).
+baseline: configs/seg_baseline.json
+
+# Positive-class IoU, Dice, precision and recall, each over all pixels of a subset
+# (metrics.py: counts summed, not a mean of per-tile scores). Per subset only, never
+# pooled. Pixel accuracy is reported beside them as a point value, for the comparison
+# with the null model.
+metrics: [iou, dice, precision, recall]
+
+# Intervals: percentile 95% bootstrap, resampling the tiles of one subset with
+# replacement. The paired interval of U-Net minus colour rule applies the same
+# resampled tiles to both. Tiles within a scene are correlated, so these intervals are
+# narrower than the truth; each is reported beside the number of tiles and of
+# spatially separate groups (connected components of the split's tiles at the
+# split's linking distance) it rests on. SteelTile test is two such groups: the
+# 5-tile scene and the 9-tile block.
+bootstrap:
+  draws: 10000
+  seed: 0
+  interval: [2.5, 97.5]
+
+# Overlays, per subset, from the single test pass's saved predictions: the test tile at
+# the median U-Net IoU (the lower median: position (n - 1) // 2 in ascending order) and
+# the test tile with the lowest U-Net IoU. Per-tile IoU uses the metrics.py rules (no
+# panel and nothing predicted = 1.0). Ties by tile name, ascending. Panels: image |
+# truth | prediction, the prediction coloured by outcome against the truth:
+overlays:
+  per_subset: [median, lowest]
+  colours:                      # RGB
+    true_positive: [0, 158, 115]     # bluish green
+    false_positive: [213, 94, 0]     # vermilion
+    false_negative: [0, 114, 178]    # blue
+
+# Val only: how much choosing the best epoch flatters the val numbers. The selected
+# epoch's per-subset val IoU against the mean of the last ten epochs, and the range over
+# the last thirty.
+selection_check:
+  late_mean_epochs: [91, 100]
+  range_epochs: [71, 100]
