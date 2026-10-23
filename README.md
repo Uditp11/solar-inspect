@@ -1,9 +1,8 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (23 Oct 2026): in progress.** Module 4 (classification), module 2 (detection),
-> module 3 (tracking) and module 1 (segmentation) are finished. Module 5's regression and
-> per-inverter analysis on plant generation data is finished; its triage and SQL layer is not
-> built yet.
+> **Status (23 Oct 2026):** all five modules are finished: module 4 (classification), module 2
+> (detection), module 3 (tracking), module 1 (segmentation) and module 5 (analytics on plant
+> generation data, triage and SQL).
 
 The plan is four perception modules trained and benchmarked independently on public solar imagery,
 sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
@@ -52,7 +51,7 @@ model has less headroom left to gain. Exact and near-exact duplicates were remov
 statistical near-neighbours were measured and bounded rather than removed. See
 [ADR 0004](docs/adr/0004-d1-near-duplicate-leakage-is-bounded-not-removed.md).
 
-## Results: module 5, analytics on plant generation data (regression half)
+## Results: module 5, analytics on plant generation data, triage and SQL
 
 Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D4
 sections) with the commit and script that produced it, and is given as **Plant 1 / Plant 2**
@@ -88,6 +87,38 @@ counted intervals at zero, of which 423 have more than half the plant at zero, 3
 smaller group and 87 a single inverter, concentrated at midday. The cleaning findings, the
 diagnostics, the confounders D4 can and cannot measure, and the IEC 61724 terms it lacks the
 inputs for are in [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
+
+### Triage and SQL
+
+| Module | Data | Metric | Value | Split size |
+|---|---|---|---|---|
+| 5 · Triage | D1 | dispatches per 1,000 modules at 2.2% prevalence, threshold chosen on val | **46.8** (CoA 3: 8.87, CoA 2: 37.95) | 3,007 imgs (test, saved logits) |
+| 5 · Triage | D1 | work orders, CoA 3 / CoA 2 | 302 / 1,115 of 1,417 | 3,007 imgs (test, saved logits) |
+| 5 · Triage | D1 | precision @ 2.2% of the CoA 3 classes: Diode / Diode-Multi / Hot-Spot / Hot-Spot-Multi | 0.598 / 0.840 / 0.194 / 0.258 | 3,007 imgs (test, once) |
+| 5 · SQL | D4, D1 findings | queries equal to their pandas equivalents | 5 of 5 | 136,472 generation rows · 44 inverters · 3,007 findings |
+| 5 · SQL | D4 | sister ratio on daily energy (SQL) vs per timestamp, Spearman | 0.983 / 0.932 | 22 / 22 inverters |
+
+**Triage** assigns each finding a Class of Abnormality (CoA 1 to 3) **by failure mode**, not
+from any pixel value, because the imagery carries no temperature; the table cites the public
+IEA-PVPS failure fact sheets per class ([ADR 0006](docs/adr/0006-coa-by-failure-mode.md)). CoA 3
+goes to the modes that can be safety-relevant (bypass diode, hot spot), so it is an upper bound
+that sends a crew with a radiometric camera to confirm it. Modules are flagged at the triage
+threshold chosen on val (module 4's row above), named by their most likely anomaly class, and
+ordered by CoA, extent and probability. No energy, power-loss or currency figure is attached
+to anything. The findings are rebuilt from the saved logits of module 4's single test pass,
+after proving their order against what that pass saved. Two of the four CoA 3 classes have
+precision below 0.3 at field prevalence: whether a module is faulty survives the prevalence
+shift, which fault it has does not.
+
+**SQL** puts D4, the inverter rankings, the CoA table and the findings into SQLite through
+Python's standard library, and runs five hand-written queries from [`sql/`](sql/): daily
+aggregates with a median built from window functions and a `HAVING` floor, `RANK()` within
+plant, gaps by `LAG()`, a sister comparison on daily energy, and the work-order list by
+`ROW_NUMBER()`. Each is checked against its pandas equivalent on a hand-worked fixture and on the
+real data; the ranks equal the ranking code's and the work orders equal the triage run's, row
+for row. The daily sister comparison is a different statistic from the per-timestamp one, and
+the Spearman above is that measured difference. Spatial queries (PostGIS `ST_DWithin`, a survey
+self-join) are written in the explainer and **not run**: no dataset here carries coordinates.
 
 ## Results: module 2, detection
 
@@ -230,15 +261,9 @@ The split is by scene, linked across all three subsets, with SteelTile cut into 
 band ([ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). The walkthrough is in
 [`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
 
-## Not built yet
-
-- **5 · Triage and SQL:** ordinal triage of findings and an SQL layer over the analytics. The regression and per-inverter half of module 5 is built (above).
-
----
-
 ## Scope: what this is and what it is not
 
-What has finished is module 4, module 2, module 3, module 1 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
+What has finished is module 4, module 2, module 3, module 1 and module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
 trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
 config was evaluated once on the held-out test split. Calibration, a base-rate correction
 and a distillation experiment followed, on val or on the saved outputs of that one test
@@ -248,11 +273,12 @@ scratch was selected on val and evaluated once on the held-out test tiles, again
 baseline and a null model. Module 3's trackers ran on D5, synthetic sequences built
 by moving a window over D2 val frames, fed the module 2 detector's real detections.
 
-Module 5's regression half ran on D4, real generation data from two plants: a plant-level
-fit with its diagnostics, and per-inverter availability and performance rankings.
+Module 5 ran on D4, real generation data from two plants: a plant-level fit with its
+diagnostics, and per-inverter availability and performance rankings; its triage ran on the
+saved outputs of module 4's test pass, and its SQL layer over both.
 
-**It is not** a finished pipeline: triage and SQL have no code yet, so nothing runs end to end, and
-the segmentation module works on RGB rooftop tiles that no thermal stage shares. The tracking numbers come from synthetic sequences and check the implementation; they are
+**It is not** an end-to-end pipeline: each module runs on its own dataset, joined by the `Finding`
+contract rather than by one run from a flight's images to a work order, and the segmentation module works on RGB rooftop tiles that no thermal stage shares. The tracking numbers come from synthetic sequences and check the implementation; they are
 not a tracking benchmark. Its numbers are not comparable to a published benchmark, because D1
 ships no official split and D2's published one is not used. It is not a temperature or power-loss
 measurement, because the imagery carries no radiometric data.
@@ -285,6 +311,9 @@ and NumPy primitives. I did not implement autograd, cuDNN kernels, or LAPACK rou
 | Driscoll-Kraay covariance, ACF, Breusch-Pagan | built | | statsmodels | |
 | Availability, sister ratio, zero-output stretches | built | ✓ | pandas grouping | hand-computed toy frames, `tests/test_inverters.py` |
 | Spearman rank correlation | built | | `scipy.stats.spearmanr` | |
+| Triage, CoA by failure mode from public sources (ADR 0006) | built | ✓ | none | hand-built dispatch cases and the ADR's table, `tests/test_triage.py` |
+| Triage threshold at field prevalence | built | ✓ | none | hand-computed, `tests/test_cls_metrics.py` |
+| SQL: hand-written queries; spatial queries written, not run | built | ✓ | SQLite from Python's standard library (`sqlite3`) | each query against its pandas equivalent, `tests/test_sql.py` and `scripts/sql_d4.py` |
 | D1 duplicate search + components | built | ✓ | none | SHA-256 byte equality (a subset of it) |
 | Macro-F1, per-class recall | built | ✓ | none | `sklearn.metrics.f1_score`, every run |
 | Focal loss, KD loss, class weights | built | ✓ | `F.kl_div`, `F.cross_entropy` | hand-computed, `tests/test_cls_metrics.py` |
@@ -300,8 +329,9 @@ The field is `delta_dn_uncalibrated` (hotspot digital number minus panel median 
 number), computed **within a single frame only**, never across frames.
 
 The field exists in the `Finding` contract
-([`src/solar_inspect/contract.py`](src/solar_inspect/contract.py)), but no module computes
-it yet. [`docs/DATA.md`](docs/DATA.md) explains why the imagery cannot give a temperature. D4's
+([`src/solar_inspect/contract.py`](src/solar_inspect/contract.py)). Module 5's triage fills it
+on each D1 crop as the 99th-percentile minus the median digital number of the raw 8-bit crop,
+and never ranks on it: D1's crops come from mixed sensors, so two crops are two frames. [`docs/DATA.md`](docs/DATA.md) explains why the imagery cannot give a temperature. D4's
 module and ambient temperatures are a different thing: readings from each plant's weather
 sensor, used as such in module 5, and they say nothing about the imagery.
 
@@ -390,7 +420,7 @@ development sequences under a rule declared first, and a held-out sweep varies o
 Every run is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
 
-### 5 · Analytics on plant generation data (regression half finished)
+### 5 · Analytics on plant generation data, triage and SQL (finished)
 
 AC power regressed on the weather columns per plant, solved two ways from scratch (normal
 equations with a Cholesky solve, and gradient descent) and checked against `lstsq` and
@@ -398,8 +428,10 @@ scikit-learn; diagnosed for the assumption this data breaks (autocorrelation), w
 Newey-West and Driscoll-Kraay standard errors; then per-inverter availability and
 performance rankings under rules committed before any per-inverter number existed, with a
 regression-free sister-ratio comparison, robustness, sensitivity and multiple-comparison
-checks, and a measured look at the confounders. Every run is in
-[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+checks, and a measured look at the confounders. Then triage: a `Triage` record beside
+`Finding`, a CoA by failure mode from public sources, and a dispatch rule declared before it
+ran; and an SQL layer of five queries on SQLite, each cross-checked against pandas. Every run
+is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
 
 ### 1 · Segmentation, site footprint (finished)
@@ -440,8 +472,8 @@ scores 0.7453 on them.
 python -m pytest
 ```
 
-Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **205 passed**, 7 deprecation
-warnings from torch and pycocotools, in 10 s. No test needs a GPU. Three D4 tests read the
+Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **231 passed**, 7 deprecation
+warnings from torch and pycocotools, in 9 s. No test needs a GPU. Three D4 tests read the
 real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
 dataset. They cover the classification maths, the detection metrics (IoU, NMS, AP at one and
 at ten IoU thresholds, panel-count error), the tuning pass's selection rule and the
@@ -449,10 +481,12 @@ checkpoint-hash guard on the test evaluation, the tracking code (the Kalman filt
 analytic two-step solution and its two limits, SORT and greedy association and track management, the
 D5 generator, the ignore rule, CLEAR MOT matching, ID switches and the count error), the analytics
 primitives (OLS, covariance, Durbin-Watson, VIF, availability, sister ratio, zero-output
-stretches), the segmentation code (IoU, Dice and the soft Dice loss including its two silent
+stretches), the triage (the `Triage` record, every tie-break of the dispatch rule, the CoA table
+against ADR 0006, the threshold at field prevalence), the five SQL queries against hand-worked rows
+and their pandas equivalents, the segmentation code (IoU, Dice and the soft Dice loss including its two silent
 failures without eps, mask binarisation, the augmentation moving tile and mask together, the U-Net's
-hand-counted parameters, its skips and its receptive field, per-tile counts, the paired tile bootstrap and the
-near-boundary mask), checked against hand-computed values and against torchvision and statsmodels
+hand-counted parameters, its skips and its receptive field, per-tile counts, the paired tile bootstrap, the
+near-boundary mask and the greyscale conversion), checked against hand-computed values and against torchvision and statsmodels
 where they compute the same definition, and the `Finding` contract's mask encoding. The
 torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every evaluation.
 
@@ -479,7 +513,8 @@ torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every e
 - Try `max_age` beyond 15. Both trackers chose the largest value of the declared grid, and it was not extended.
 - Track on a real flyover. D2's frames do not overlap, so D5's sequences are synthetic; no real multi-frame thermal sequence was used.
 - Compare an ImageNet-pretrained encoder for the U-Net. Module 1 trains from scratch only, so what pretraining would gain on 445 training tiles is not measured.
-- Build module 5's triage and SQL layer. See "Not built yet" above.
+- Run the spatial queries. No dataset here carries coordinates, so the PostGIS queries in explainer 05 are written and not run, and the triage ranking has no string position or affected-module count.
+- Settle whether D1's Cracking class is glass breakage. ADR 0006 keeps it at CoA 2 as the project's assignment; if it is, the fact sheets would put it at CoA 3.
 
 ---
 
