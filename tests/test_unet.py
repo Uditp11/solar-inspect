@@ -62,3 +62,28 @@ def test_each_skip_connection_is_used(level):
         y_again = m(x)
     assert torch.equal(y, y_again)
     assert not torch.allclose(y, y_cut)
+
+
+def test_receptive_field_of_depth_4_is_252_px():
+    """Measured, then pinned: the input window one output pixel depends on.
+
+    Back-propagate from the centre output pixel and take the extent of the
+    non-zero input gradient. A linearised copy (ReLU removed, max pooling made
+    average pooling) keeps every path alive, so no gradient is zero by accident.
+    The window depends on depth and kernel sizes, not on width, so base 4 stands
+    for the trained base 32. The full-width trained architecture gives the same.
+    """
+    torch.manual_seed(0)
+    m = UNet(base=4, depth=4).double().eval()
+    for mod in list(m.modules()):
+        for name, child in mod.named_children():
+            if isinstance(child, torch.nn.ReLU):
+                setattr(mod, name, torch.nn.Identity())
+            elif isinstance(child, torch.nn.MaxPool2d):
+                setattr(mod, name, torch.nn.AvgPool2d(2))
+    x = torch.randn(1, 3, 320, 320, dtype=torch.double, requires_grad=True)
+    m(x)[0, 0, 160, 160].backward()
+    rows = torch.nonzero(x.grad.abs().sum((0, 1, 3)))[:, 0]
+    cols = torch.nonzero(x.grad.abs().sum((0, 1, 2)))[:, 0]
+    assert int(rows.max() - rows.min() + 1) == 252
+    assert int(cols.max() - cols.min() + 1) == 252
