@@ -1,9 +1,9 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (22 Oct 2026): in progress.** Module 4 (classification) and module 2 (detection) are
-> finished. Module 5's regression and per-inverter analysis on plant generation data is
-> finished; its triage and SQL layer is not built yet. Segmentation and tracking are not built
-> yet.
+> **Status (23 Oct 2026): in progress.** Module 4 (classification), module 2 (detection) and
+> module 3 (tracking) are finished. Module 5's regression and per-inverter analysis on plant
+> generation data is finished; its triage and SQL layer is not built yet. Segmentation is not
+> built yet.
 
 The plan is four perception modules trained and benchmarked independently on public solar imagery,
 sharing one `Finding` data contract, plus an analytics layer on real plant generation data.
@@ -137,29 +137,73 @@ the SHA-256 of the one checkpoint allowed to be evaluated;
 **These numbers are not comparable to a published D2 number**: the published splits are
 contaminated and are not used (see [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md)).
 
+## Results: module 3, tracking
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D5 sections) with
+the commit and run it came from. **D5 is synthetic.** D2's frames do not overlap, so a real flyover
+cannot be rebuilt from them: each D5 sequence is a 320 x 256 window moving for 60 frames over one D2
+val frame, with random-walk acceleration, yaw, an altitude ramp and a drifting occluder, and the
+boxes the trackers see are the module 2 detector's real detections on every rendered window. The
+metrics, the settings rule and the sweep were committed before any metric number existed.
+
+Deduplication, held-out sequences (seeds 100 to 119), defaults (pan 4 px per frame, occlusion 10
+frames, detector conf 0.25):
+
+- no tracker: **1,200 frames, 27,518 detections, 21,261 ids, vs 705 true modules**
+- greedy IoU: **1,200 frames, 27,518 detections, 1,035 ids, vs 705 true modules**
+- SORT: **1,200 frames, 27,518 detections, 1,103 ids, vs 705 true modules**
+
+**Implementation correctness check on synthetic sequences, not a performance result:**
+
+| Tracker | MOTA | IDF1 | ID switches | FP | FN | K ids | G true modules | (K − G)/G, median [range] over 20 sequences |
+|---|---|---|---|---|---|---|---|---|
+| no tracker | -0.110 | 0.035 | 17,801 | 2,756 | 156 | 21,261 | 705 | 30.256 [22.652, 48.417] |
+| greedy IoU | 0.894 | 0.732 | 355 | 1,187 | 442 | 1,035 | 705 | 0.493 [0.222, 1.750] |
+| SORT | 0.890 | 0.725 | 383 | 1,176 | 499 | 1,103 | 705 | 0.552 [0.231, 1.917] |
+
+- **Settings, chosen on the 10 development sequences only:** both trackers at `max_age` 15,
+  `min_hits` 3, IoU gate 0.1, the lowest summed |K − G| in a declared 30-setting grid, committed in
+  [`configs/tracking.yaml`](configs/tracking.yaml) before any held-out sequence was scored.
+- **Sweep, one factor at a time on the held-out sequences:** greedy IoU, which has no motion model,
+  ends with fewer surplus ids than SORT in 11 of 13 cells; SORT is ahead only at pan speed 2 and at
+  `max_age` 1, by 2 and 3 ids. The gap grows with pan speed (SORT minus greedy: -2, 68, 122, 167 ids
+  at 2, 4, 6, 8 px per frame), and so do the window's velocity reversals at the frame bounds, so the
+  two are not separated.
+- **Post-hoc motion diagnostic, on ground-truth boxes:** one frame ahead, the last box always
+  overlaps the next at the 0.1 gate (median motion 3.8 px against a 62 x 37 px box), and SORT's
+  Kalman prediction is closer than the last box in median IoU at every speed, one frame ahead and
+  coasting 5 and 10 frames. So it does not explain why greedy wins; the effect of detector noise and
+  of the assignment was not measured.
+
+The hand-written ID-switch count equals motmetrics' on every sequence. Hypotheses that sit only on
+labelled panels failing the visibility rule (at the window edge or under the occluder) are dropped
+before scoring rather than counted as false positives. The walkthrough is in
+[`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
+
 ## Not built yet
 
 - **1 · Segmentation (D3 PV01):** site-footprint IoU and Dice per rooftop subset, against a naive colour-threshold baseline.
-- **3 · Tracking (D5, synthetic):** MOTA, IDF1 and ID switches, and how many unique modules remain after deduplicating detections across frames.
 - **5 · Triage and SQL:** ordinal triage of findings and an SQL layer over the analytics. The regression and per-inverter half of module 5 is built (above).
 
 ---
 
 ## Scope: what this is and what it is not
 
-What has finished is module 4, module 2 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
+What has finished is module 4, module 2, module 3 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
 trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
 config was evaluated once on the held-out test split. Calibration, a base-rate correction
 and a distillation experiment followed, on val or on the saved outputs of that one test
 run. D2 and D3 were downloaded and prepared (D2 deduplicated and re-split, D3 counted per
 subset). On D2 a YOLOv8n fine-tune was selected on val and evaluated once on the held-out test
-sortie; no model has been trained on D3.
+sortie; no model has been trained on D3. Module 3's trackers ran on D5, synthetic sequences built
+by moving a window over D2 val frames, fed the module 2 detector's real detections.
 
 Module 5's regression half ran on D4, real generation data from two plants: a plant-level
 fit with its diagnostics, and per-inverter availability and performance rankings.
 
-**It is not** a finished pipeline: segmentation, tracking, triage and SQL have no code yet, so
-nothing runs end to end. Its numbers are not comparable to a published benchmark, because D1
+**It is not** a finished pipeline: segmentation, triage and SQL have no code yet, so nothing runs
+end to end. The tracking numbers come from synthetic sequences and check the implementation; they are
+not a tracking benchmark. Its numbers are not comparable to a published benchmark, because D1
 ships no official split and D2's published one is not used. It is not a temperature or power-loss
 measurement, because the imagery carries no radiometric data.
 
@@ -179,10 +223,11 @@ column is the planned cross-check.
 | mAP@0.5:0.95 | built | | torchmetrics | the from-scratch AP averaged over ten IoU thresholds |
 | U-Net | planned | ✓ (`nn.Conv2d` etc.) | none | |
 | Detector | built | | Ultralytics YOLOv8 | Ultralytics' own mAP (gap measured: unclipped boxes, trapezoid rule) |
-| Kalman filter | planned | ✓ | none | analytic 2-step test |
-| Assignment | planned | | `scipy.optimize.linear_sum_assignment` | |
-| MOTA/IDF1 | planned | | motmetrics | |
-| ID switches, unique-module error | planned | ✓ | none | hand-computed toy |
+| Kalman filter | built | ✓ | none | analytic 2-step test |
+| Assignment | built | | `scipy.optimize.linear_sum_assignment` | hand-computed matrices, `tests/test_sort.py` |
+| MOTA/IDF1 | built | | motmetrics (`boxiou`, because `iou_matrix` fails on NumPy 2) | hand-computed sequences, `tests/test_track_metrics.py` |
+| ID switches, unique-module error | built | ✓ | none | motmetrics' switch count, equal on every sequence; hand-computed sequences |
+| Flyover warp (D5) | built | | `cv2.warpPerspective` | analytic visible fractions against a supersampled pixel mask |
 | OLS, normal equations | built | ✓ | linear solve: `scipy.linalg.cho_solve` | `np.linalg.lstsq`, scikit-learn |
 | OLS, gradient descent | built | ✓ | none | `np.linalg.lstsq`, scikit-learn |
 | Durbin-Watson, VIF | built | ✓ | none | hand-computed, `tests/test_diagnostics.py` |
@@ -277,6 +322,20 @@ val frame (584 boxes) returned exactly 1,000 detections with the cap at 1000.
 Every run is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/02-detection.md`](docs/explainers/02-detection.md).
 
+### 3 · Tracking (finished)
+
+Multi-object tracking of panels across frames, so that each module is counted once. SORT's
+constant-velocity box Kalman filter is written from scratch, starting from an analytic test, with
+SORT's noise constants and area clamp; SORT itself (assignment with scipy, an IoU gate after
+assignment, SORT's track management), a greedy-IoU tracker with no motion model and a no-tracker
+floor are written beside it. They run on D5: synthetic sequences built from D2 val frames by a seeded
+generator (moving, rotating and scaling window, drifting occluder), with the module 2 detector's real
+detections and exact per-panel identities. MOTA and IDF1 come from motmetrics; the ID-switch count and
+the unique-module count error are written by hand and checked against it. Settings were chosen on
+development sequences under a rule declared first, and a held-out sweep varies one factor at a time.
+Every run is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
+
 ### 5 · Analytics on plant generation data (regression half finished)
 
 AC power regressed on the weather columns per plant, solved two ways from scratch (normal
@@ -318,12 +377,14 @@ majority there.
 python -m pytest
 ```
 
-Run on 22 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **118 passed**, 7 deprecation
-warnings from torch and pycocotools, in 7 s. No test needs a GPU. Three D4 tests read the
+Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **163 passed**, 7 deprecation
+warnings from torch and pycocotools, in 9 s. No test needs a GPU. Three D4 tests read the
 real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
 dataset. They cover the classification maths, the detection metrics (IoU, NMS, AP at one and
 at ten IoU thresholds, panel-count error), the tuning pass's selection rule and the
-checkpoint-hash guard on the test evaluation, the analytics
+checkpoint-hash guard on the test evaluation, the tracking code (the Kalman filter against an
+analytic two-step solution and its two limits, SORT and greedy association and track management, the
+D5 generator, the ignore rule, CLEAR MOT matching, ID switches and the count error), the analytics
 primitives (OLS, covariance, Durbin-Watson, VIF, availability, sister ratio, zero-output
 stretches), checked against hand-computed values and against torchvision and statsmodels
 where they compute the same definition, and the `Finding` contract's mask encoding. The
@@ -345,7 +406,13 @@ torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every e
 - Test on more than one flight. D2 is one drone flight on one day with one 640 x 512 thermal camera; the test sortie is a later part of that same flight.
 - Use RGB. The detector sees only the rendered thermal frames; no visible-light imagery is fused.
 - Write anchor assignment. YOLOv8 is anchor-free (its task-aligned assigner replaced anchor matching), so the historical anchor-matching step was not implemented.
-- Build modules 1 and 3, or module 5's triage and SQL layer. See "Not built yet" above.
+- Compute HOTA. Tracking is scored with MOTA, IDF1, ID switches and the unique-module count; HOTA, which separates detection from association, is described in the explainer and not computed.
+- Use appearance features. No tracker here re-identifies a panel by how it looks after a long gap.
+- Run ByteTrack or OC-SORT. SORT is the only Kalman tracker built, compared with greedy IoU and no tracker.
+- Compensate camera motion. The trackers predict in image space with no estimate of the platform's ego-motion, from the images or from odometry.
+- Try `max_age` beyond 15. Both trackers chose the largest value of the declared grid, and it was not extended.
+- Track on a real flyover. D2's frames do not overlap, so D5's sequences are synthetic; no real multi-frame thermal sequence was used.
+- Build module 1, or module 5's triage and SQL layer. See "Not built yet" above.
 
 ---
 
