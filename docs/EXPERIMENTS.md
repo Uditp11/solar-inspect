@@ -1644,3 +1644,172 @@ Null all-background model, pixel accuracy per split (its IoU is 0 everywhere):
 | train | 0.9518 | 0.7001 | 0.4722 |
 | val | 0.9353 | 0.5877 | 0.4308 |
 | test | 0.9422 | 0.5609 | 0.7453 |
+
+## D3 segmentation: results
+
+Fri 23 Oct 2026. Evaluation code [`66c7574`](../../../commit/66c7574) (`segmentation/evaluate.py`,
+`scripts/eval_seg.py`); evaluation config `configs/seg_eval.yaml` [`49c44d9`](../../../commit/49c44d9),
+committed before the test split was read; overlays and post-hoc diagnostic
+[`c1655f6`](../../../commit/c1655f6); thermal check declared in `configs/seg_thermal_negative.yaml`
+[`0826cca`](../../../commit/0826cca) before its first run, script [`4a98605`](../../../commit/4a98605).
+
+**Full run** `seg_unet_20261023T145359Z`, from `c1f0e88` (config `bc7df9d`), clean tree, no overrides:
+100 epochs, wall 524.6 s, median 5.17 s per epoch (4.82 s training), peak VRAM 2,080 MiB allocated /
+3,526 MiB reserved, train loss 0.8692 at epoch 1 and 0.0859 at epoch 100. Selected epoch **87**
+(highest mean of the three per-subset val IoUs). `best.pt` SHA-256
+`9a2653125d19df6c0883c8c6e0dacfcb42d651738558ae6c710bbfeae0bb8724`, pinned in the evaluation config.
+
+### Selection check, val
+
+From the run's `epochs.jsonl`, computed by `scripts/eval_seg.py val` (run
+`seg_eval_val_20261023T153105Z` at `49c44d9`, clean):
+
+| Subset | val IoU at epoch 87 | mean of epochs 91-100 | difference | min, max over epochs 71-100 |
+|---|---:|---:|---:|---|
+| Brick | 0.9074 | 0.9000 | +0.0073 | 0.8428, 0.9074 |
+| FlatConcrete | 0.9272 | 0.9265 | +0.0007 | 0.9196, 0.9277 |
+| SteelTile | 0.9455 | 0.9455 | +0.00001 | 0.9395, 0.9463 |
+
+Selection flatters Brick's val IoU by 0.007; epoch 87 is Brick's maximum over the last thirty
+epochs. The others move by less than 0.001.
+
+### U-Net against the colour rule, val
+
+Same run. U-Net `best.pt`, logit > 0 (sigmoid 0.5), float16 autocast as in training; colour rule
+`2B - R - G >= 24` from `configs/seg_baseline.json`. Intervals: percentile 95% bootstrap over the
+subset's tiles, 10,000 draws, seed 0, the difference paired (same resampled tiles). "Groups" are the
+connected components of the subset's tiles at name-coordinate distance <= 4.5. The script reproduces
+the training log's epoch-87 U-Net IoUs and the baseline's val IoUs exactly (difference 0.0 in all
+three subsets).
+
+| Subset (val) | tiles | groups | U-Net IoU | colour rule IoU | U-Net minus colour rule |
+|---|---:|---:|---|---|---|
+| Brick | 21 | 8 | 0.9074 [0.8553, 0.9367] | 0.3967 [0.2538, 0.5461] | +0.5107 [0.3815, 0.6203] |
+| FlatConcrete | 60 | 1 | 0.9272 [0.9192, 0.9337] | 0.6611 [0.6176, 0.7021] | +0.2660 [0.2269, 0.3079] |
+| SteelTile | 14 | 1 | 0.9455 [0.9381, 0.9516] | 0.7313 [0.6757, 0.7681] | +0.2143 [0.1808, 0.2645] |
+
+U-Net val Dice / precision / recall: Brick 0.9514 / 0.9323 / 0.9713, FlatConcrete 0.9622 / 0.9382 /
+0.9874, SteelTile 0.9720 / 0.9657 / 0.9784. Pixel accuracy, U-Net / colour rule / null: Brick 0.9936 /
+0.9137 / 0.9353, FlatConcrete 0.9680 / 0.8305 / 0.5877, SteelTile 0.9679 / 0.8120 / 0.4308. The U-Net
+beats the colour rule in every subset; every paired interval excludes 0.
+
+### D3 segmentation: THE TEST EVALUATION, once, and not again
+
+**Config commit: `configs/seg_eval.yaml` [`49c44d9`](../../../commit/49c44d9)**, before
+`scripts/eval_seg.py test` read the test split. The script refuses unless that config and
+`seg_baseline.json` (`fbeb0f2`), `seg_unet.yaml` (`bc7df9d`) and `d3_split.json` (`f2b0465`) are
+tracked and committed and the tree is clean, and printed all four SHAs; refuses a checkpoint whose
+hash differs from the config's (it matched); and refuses if any `runs/seg_eval_test_*` directory
+exists, which it creates before reading test. Run `seg_eval_test_20261023T153146Z` from `49c44d9`,
+clean tree, one pass. Its predicted masks are saved in the run directory; nothing after it runs the
+model on test.
+
+| Subset (test) | tiles | groups | panel share | **U-Net IoU** | colour rule IoU | U-Net minus colour rule | null: IoU, pixel accuracy |
+|---|---:|---:|---:|---|---|---|---|
+| Brick | 19 | 8 | 0.0578 | **0.9101** [0.8593, 0.9385] | 0.3068 [0.1876, 0.4177] | +0.6033 [0.5073, 0.6977] | 0, 0.9422 |
+| FlatConcrete | 60 | 3 | 0.4391 | **0.7910** [0.7350, 0.8430] | 0.4350 [0.3790, 0.4895] | +0.3560 [0.3232, 0.3944] | 0, 0.5609 |
+| SteelTile | 14 | 2 | 0.2547 | **0.9778** [0.9620, 0.9851] | 0.3912 [0.2232, 0.5849] | +0.5867 [0.3980, 0.7537] | 0, 0.7453 |
+
+| Subset (test) | U-Net Dice | U-Net precision | U-Net recall | colour rule Dice / precision / recall |
+|---|---|---|---|---|
+| Brick | 0.9529 [0.9243, 0.9683] | 0.9601 [0.9297, 0.9769] | 0.9459 [0.9017, 0.9706] | 0.4696 / 0.3317 / 0.8039 |
+| FlatConcrete | 0.8833 [0.8472, 0.9148] | 0.9703 [0.9654, 0.9750] | 0.8106 [0.7512, 0.8664] | 0.6062 / 0.7336 / 0.5165 |
+| SteelTile | 0.9888 [0.9806, 0.9925] | 0.9879 [0.9756, 0.9940] | 0.9897 [0.9826, 0.9929] | 0.5623 / 0.5933 / 0.5345 |
+
+Pixel accuracy, test, U-Net / colour rule / null: Brick 0.9946 / **0.8950** / 0.9422, FlatConcrete
+0.9060 / 0.7054 / 0.5609, SteelTile 0.9943 / 0.7881 / 0.7453. On Brick the colour rule, at IoU
+0.3068, has lower pixel accuracy than the model that finds nothing.
+
+Tiles within a scene are correlated, so the tile-bootstrap intervals are narrower than the truth.
+SteelTile test is two groups (the 5-tile scene and the 9-tile block) at 25% panel pixels against 53%
+in train. FlatConcrete test is below its val (0.7910 against 0.9272), through recall (0.8106 against
+0.9874); precision is not lower (0.9703 against 0.9382).
+
+**Overlay tiles**, by the rule in the config (per subset, the lower-median and the lowest U-Net IoU,
+ties by name), drawn by `scripts/seg_overlays.py` (run `seg_overlays_20261023T153449Z` at `c1655f6`,
+clean) from the saved masks; per-tile counts recomputed from them equal `eval.json`'s on all 93
+tiles:
+
+| Subset | median tile | IoU | lowest tile | IoU |
+|---|---|---:|---|---:|
+| Brick | `PV01_325472_1204667` | 0.8984 | `PV01_325424_1204680` | 0.0000 |
+| FlatConcrete | `PV01_325416_1205362` | 0.8845 | `PV01_325419_1205364` | 0.0000 |
+| SteelTile | `PV01_325148_1204246` | 0.9707 | `PV01_325143_1204248` | 0.2919 |
+
+The two IoU-0 tiles hold only a sliver of panel cut by the tile edge (Brick: at the top edge;
+FlatConcrete: a 1 to 2 px strip at the bottom edge), missed. SteelTile's lowest is a small panel
+corner at the tile edge plus three false-positive blobs on bare ground. Figures stay under `runs/`.
+
+### D3 segmentation: post-hoc error diagnostic of the test evaluation
+
+**Post-hoc: measured after the single test evaluation, from its saved predicted masks, no model
+pass; it changes no number above and decides nothing.** Same run `seg_overlays_20261023T153449Z`.
+A pixel is within 3 px of a true boundary when the Euclidean distance from its centre to the nearest
+pixel of the other class is at most 3 (the tile edge is not a boundary). The 3 px radius was chosen
+after the evaluation.
+
+| Subset (test) | FP px | FN px | errors within 3 px | FP within | FN within | all pixels within 3 px |
+|---|---:|---:|---:|---:|---:|---:|
+| Brick | 2,832 | 3,895 | 0.753 | 0.712 | 0.782 | 0.027 |
+| FlatConcrete | 42,858 | 326,924 | 0.427 | 0.967 | 0.357 | 0.222 |
+| SteelTile | 2,838 | 2,406 | 0.877 | 0.879 | 0.875 | 0.035 |
+
+U-Net per group of test tiles (counts summed over the group):
+
+| Subset | group (tiles, first tile) | IoU | recall | FN px |
+|---|---|---:|---:|---:|
+| Brick | 2, `PV01_325279_1203778` | 0.9005 | 0.9286 | 224 |
+| Brick | 2, `PV01_325290_1203775` | 0.9152 | 0.9444 | 410 |
+| Brick | 3, `PV01_325327_1203764` | 0.9475 | 0.9637 | 424 |
+| Brick | 5, `PV01_325346_1203791` | 0.9303 | 0.9918 | 153 |
+| Brick | 2, `PV01_325424_1204680` | 0.6214 | 0.6331 | 1,114 |
+| Brick | 1, `PV01_325472_1204667` | 0.8984 | 0.9059 | 379 |
+| Brick | 3, `PV01_325558_1204596` | 0.8897 | 0.9508 | 641 |
+| Brick | 1, `PV01_325573_1204537` | 0.9436 | 0.9500 | 550 |
+| FlatConcrete | 8, `PV01_325314_1205503` | 0.9150 | 0.9903 | 602 |
+| FlatConcrete | **45, `PV01_325407_1205351`** | **0.7808** | **0.7981** | **325,020** |
+| FlatConcrete | 7, `PV01_325572_1204537` | 0.9393 | 0.9761 | 1,302 |
+| SteelTile | 9, `PV01_325141_1204246` | 0.9820 | 0.9894 | 2,167 |
+| SteelTile | 5, `PV01_325206_1204230` | 0.9506 | 0.9920 | 239 |
+
+On Brick and SteelTile the error left is at array edges. On FlatConcrete the false positives are
+edges, but two thirds of the missed pixels are more than 3 px inside an array, and one 45-tile roof
+holds 99.4% of them. Looked at directly: on that roof large stretches of the panels render bright,
+close to white, unlike the blue-grey panels elsewhere, and those stretches are what is missed. Why
+they look like that (glare, a different panel type, exposure) is not established here.
+
+### D3 U-Net on D2 thermal frames: the transfer check
+
+Rules committed first in `configs/seg_thermal_negative.yaml` [`0826cca`](../../../commit/0826cca);
+`scripts/seg_thermal_negative.py` [`4a98605`](../../../commit/4a98605), run
+`seg_thermal_20261023T153719Z` at `4a98605`, clean (a development run of the uncommitted script,
+`seg_thermal_20261023T153643Z`, gave identical numbers). The pinned `best.pt`, unchanged and not
+fine-tuned; D2 **val** frames only (sortie 2, 51 frames, 640 x 512, 4,929 boxes); D2 test is not
+read. Each frame read as greyscale, replicated to three channels, standardised with the PV01 train
+mean and std from the checkpoint; no padding needed (640 and 512 are multiples of 16); threshold
+0.5. Reference: filled-box masks (pixel centres inside any ground-truth box), an approximation that
+includes the gaps a box spans.
+
+| D2 val, 51 frames, 16,711,680 px | pooled | per frame |
+|---|---:|---|
+| predicted positive fraction | 6e-8 (1 px) | 0 on 50 frames, 1 px on `DJI_20230213154012_0082` |
+| filled-box coverage | 0.4621 | median 0.4758, min 0.1690, max 0.6926 |
+| IoU with the filled-box mask | 0.0000 | 0 on every frame |
+| predicted positives outside every box | 1.0 | defined on 1 frame |
+
+**It collapses: the model predicts no panel on thermal frames.** Domain differences, all at once:
+modality (PV01 RGB reflectance, three colour channels; D2 one rendered 8-bit thermal channel,
+replicated); ground sampling distance (PV01 0.1 m; D2's is not documented by the dataset, and
+`docs/DATA.md` estimates about 4 cm per pixel from the sensor's pitch and focal length at an assumed
+30 m, consistent with the median box of 56 x 37 px); viewpoint (both near-nadir drone views, but
+PV01 tiles are crops of orthophotos and D2 frames whole camera frames); content (rooftops in Jiangsu
+with blue-grey panels against brick, concrete or steel; a ground-mounted plant in Greece, rows bright
+against vegetation in the overlay frames). Which difference causes the collapse is not separated; a
+control on greyscaled PV01 tiles was not declared and not run.
+
+### Receptive field
+
+`tests/test_unet.py::test_receptive_field_of_depth_4_is_252_px` [`4ddffc5`](../../../commit/4ddffc5):
+one output pixel of the depth-4 U-Net depends on a 252 x 252 px input window, measured by
+back-propagating from the centre output pixel through a linearised copy (ReLU removed, max pooling
+made average pooling). The trained base-32 net, linearised or not, measures the same.
