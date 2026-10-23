@@ -6,6 +6,7 @@ runs/
 *.zip
 *.z0*
 *.gif
+!docs/figures/*.gif
 docs/private/
 __pycache__/
 .venv/
