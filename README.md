@@ -1,8 +1,8 @@
 # PV Inspection Pipeline: thermal defect detection, tracking and analytics
 
-> **Status (23 Oct 2026): in progress.** Module 4 (classification), module 2 (detection) and
-> module 3 (tracking) are finished. Module 5's regression and per-inverter analysis on plant
-> generation data is finished; its triage and SQL layer is not built yet. Segmentation is not
+> **Status (23 Oct 2026): in progress.** Module 4 (classification), module 2 (detection),
+> module 3 (tracking) and module 1 (segmentation) are finished. Module 5's regression and
+> per-inverter analysis on plant generation data is finished; its triage and SQL layer is not
 > built yet.
 
 The plan is four perception modules trained and benchmarked independently on public solar imagery,
@@ -180,29 +180,75 @@ labelled panels failing the visibility rule (at the window edge or under the occ
 before scoring rather than counted as false positives. The walkthrough is in
 [`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
 
+## Results: module 1, segmentation
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D3 sections) with
+the commit and run it came from. PV01 is 0.1 m RGB rooftop imagery from one region: this module is a
+**site-footprint / array-extent** primitive, and it does not compose with the thermal stages. Every
+number is per rooftop subset, never pooled. Test is 93 tiles, read once. Each interval is a 95%
+percentile bootstrap over the subset's test tiles (10,000 resamples, seed 0); the difference is
+**paired**, U-Net and colour rule scored on the same resampled tiles. Tiles within a scene are
+correlated, so these intervals are narrower than the truth; the number of spatially separate tile
+groups is given beside each.
+
+| Subset | U-Net IoU (test, once) | colour rule IoU (test) | U-Net minus colour rule (test, paired) | null model (test): IoU, pixel accuracy | Split size | U-Net IoU (val) |
+|---|---|---|---|---|---|---|
+| Brick | **0.9101**, 0.8593 to 0.9385 | 0.3068, 0.1876 to 0.4177 | +0.6033, 0.5073 to 0.6977 | 0, 0.9422 | 19 tiles, 8 groups (test, once) | 0.9074 (21 tiles) |
+| FlatConcrete | **0.7910**, 0.7350 to 0.8430 | 0.4350, 0.3790 to 0.4895 | +0.3560, 0.3232 to 0.3944 | 0, 0.5609 | 60 tiles, 3 groups (test, once) | 0.9272 (60 tiles) |
+| SteelTile | **0.9778**, 0.9620 to 0.9851 | 0.3912, 0.2232 to 0.5849 | +0.5867, 0.3980 to 0.7537 | 0, 0.7453 | 14 tiles, 2 groups (test, once) | 0.9455 (14 tiles) |
+
+U-Net, test, Brick / FlatConcrete / SteelTile: Dice 0.9529 / 0.8833 / 0.9888, precision 0.9601 /
+0.9703 / 0.9879, recall 0.9459 / 0.8106 / 0.9897. The U-Net is written from `torch.nn` layers and
+trained from scratch (8,633,441 parameters, no pretrained weights); the colour rule is **panel
+where 2B - R - G >= 24**, chosen on train; the null model predicts background everywhere. The
+evaluation config ([`configs/seg_eval.yaml`](configs/seg_eval.yaml)), with the SHA-256 of the one
+checkpoint allowed, was committed in [`49c44d9`](../../commit/49c44d9) before the test split was read;
+[`scripts/eval_seg.py`](scripts/eval_seg.py) refuses otherwise.
+
+- **Val**, the selection split (epoch 87, by the mean of the three per-subset val IoUs): the colour
+  rule scores 0.3967 / 0.6611 / 0.7313 there, and the paired U-Net lead is +0.5107 / +0.2660 /
+  +0.2143, every interval clear of 0. Selection flatters Brick's val IoU by 0.007 against the mean of
+  the last ten epochs, and the other two by less than 0.001.
+- **FlatConcrete test is below its val (0.7910 against 0.9272), and the drop is recall.** Post-hoc,
+  from the saved predictions: one 45-tile roof holds 99.4% of the subset's missed pixels (IoU 0.7808
+  there; the other two groups 0.9150 and 0.9393), where large stretches of panel render bright, close
+  to white, and are missed. The cause of that appearance is not established. On Brick and SteelTile
+  the remaining error is at array edges: 75% and 88% of the error pixels lie within 3 px of a true
+  boundary.
+- **Pixel accuracy misleads on Brick only.** The null model scores 0.9422 there by finding nothing;
+  the colour rule, at IoU 0.3068, scores 0.8950, below it.
+- **The panel share shifts between splits** (SteelTile test 25% against 53% in train; FlatConcrete
+  val and test 41% and 44% against 30%), so val, train and test numbers are not directly comparable.
+- **It does not transfer to thermal.** Run unchanged on D2's 51 thermal val frames, it marks one
+  pixel in 16.7 million as panel where ground-truth boxes cover 46%.
+
+The split is by scene, linked across all three subsets, with SteelTile cut into blocks and a guard
+band ([ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). The walkthrough is in
+[`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
+
 ## Not built yet
 
-- **1 · Segmentation (D3 PV01):** site-footprint IoU and Dice per rooftop subset, against a naive colour-threshold baseline.
 - **5 · Triage and SQL:** ordinal triage of findings and an SQL layer over the analytics. The regression and per-inverter half of module 5 is built (above).
 
 ---
 
 ## Scope: what this is and what it is not
 
-What has finished is module 4, module 2, module 3 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
+What has finished is module 4, module 2, module 3, module 1 and the regression half of module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
 trained on D1 thermal crops, on a split rebuilt after deduplication, and the ResNet-18
 config was evaluated once on the held-out test split. Calibration, a base-rate correction
 and a distillation experiment followed, on val or on the saved outputs of that one test
-run. D2 and D3 were downloaded and prepared (D2 deduplicated and re-split, D3 counted per
-subset). On D2 a YOLOv8n fine-tune was selected on val and evaluated once on the held-out test
-sortie; no model has been trained on D3. Module 3's trackers ran on D5, synthetic sequences built
+run. D2 was deduplicated and re-split by sortie, and D3 split by scene. On D2 a YOLOv8n fine-tune
+was selected on val and evaluated once on the held-out test sortie. On D3 a U-Net written from
+scratch was selected on val and evaluated once on the held-out test tiles, against a colour-threshold
+baseline and a null model. Module 3's trackers ran on D5, synthetic sequences built
 by moving a window over D2 val frames, fed the module 2 detector's real detections.
 
 Module 5's regression half ran on D4, real generation data from two plants: a plant-level
 fit with its diagnostics, and per-inverter availability and performance rankings.
 
-**It is not** a finished pipeline: segmentation, triage and SQL have no code yet, so nothing runs
-end to end. The tracking numbers come from synthetic sequences and check the implementation; they are
+**It is not** a finished pipeline: triage and SQL have no code yet, so nothing runs end to end, and
+the segmentation module works on RGB rooftop tiles that no thermal stage shares. The tracking numbers come from synthetic sequences and check the implementation; they are
 not a tracking benchmark. Its numbers are not comparable to a published benchmark, because D1
 ships no official split and D2's published one is not used. It is not a temperature or power-loss
 measurement, because the imagery carries no radiometric data.
@@ -214,14 +260,14 @@ measurement, because the imagery carries no radiometric data.
 **From scratch** = I wrote the algorithm and the module composition, using `torch.nn` layers
 and NumPy primitives. I did not implement autograd, cuDNN kernels, or LAPACK routines.
 
-Rows marked **planned** belong to modules that are not built yet; for those, the last
-column is the planned cross-check.
-
 | Component | Status | Written by me | Library | Cross-checked against |
 |---|---|---|---|---|
 | IoU, NMS, mAP@0.5 | built | ✓ | none | torchmetrics (mAP@0.5, equal at 101 points on val and test); `torchvision.ops.nms` (NMS), and Ultralytics' NMS on the detector's own boxes (equal counts on all 51 val images); hand-computed (IoU) |
 | mAP@0.5:0.95 | built | | torchmetrics | the from-scratch AP averaged over ten IoU thresholds |
-| U-Net | planned | ✓ (`nn.Conv2d` etc.) | none | |
+| U-Net | built | ✓ (`torch.nn` layers, no pretrained weights) | none | hand-counted parameter count of the smallest net, output shapes, each skip used (`tests/test_unet.py`) |
+| IoU, Dice, soft Dice loss | built | ✓ | none | hand-computed values; Dice = 2 IoU / (1 + IoU) on 50 random mask pairs (`tests/test_seg_metrics.py`) |
+| Colour-threshold baseline | built | ✓ | none | the histogram search against a direct pixel count, equal (asserted in `scripts/baseline_seg.py`) |
+| Tile bootstrap, boundary share | built | ✓ | `scipy.ndimage.distance_transform_edt` for the boundary distance | hand-worked cases, `tests/test_seg_evaluate.py` |
 | Detector | built | | Ultralytics YOLOv8 | Ultralytics' own mAP (gap measured: unclipped boxes, trapezoid rule) |
 | Kalman filter | built | ✓ | none | analytic 2-step test |
 | Assignment | built | | `scipy.optimize.linear_sum_assignment` | hand-computed matrices, `tests/test_sort.py` |
@@ -268,6 +314,7 @@ python scripts/download_data.py     # 1. fetch, checksum and extract all four da
 python scripts/split_d2.py          # 2. rebuild D2's split and regenerate configs/d2.yaml
 python scripts/dedup_d1.py          # 3. exclude D1's near-identical crops
 python scripts/split_d1.py          # 4. rebuild D1's split
+python scripts/split_d3.py          # 5. rebuild D3's split; the loader checks its hash
 ```
 
 **None of them is optional, and 3 comes before 4.** D2's published train/val/test splits
@@ -275,7 +322,10 @@ are contaminated and are not used here; `configs/d2.yaml` points at the rebuilt 
 which only exists once step 2 has run. See
 [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md). D1 ships no split at all, and
 splitting it before deduplicating leaves a near-identical pair straddling train and test.
-See [ADR 0003](docs/adr/0003-d1-is-deduplicated-at-4-dn-by-component.md). Step 0 is not
+See [ADR 0003](docs/adr/0003-d1-is-deduplicated-at-4-dn-by-component.md). D3 ships no split
+either; step 5 rebuilds the scene split, and the segmentation loader refuses any assignment whose
+hash differs from the one pinned in `configs/d3_split.json` (see
+[ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). Step 0 is not
 optional either: without the `--extra-index-url` line in `requirements.txt`, pip resolves
 `torch` to the CPU-only wheel and every GPU run here silently runs on the CPU.
 
@@ -348,14 +398,22 @@ checks, and a measured look at the confounders. Every run is in
 [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
 
-### Data work already done for the unbuilt modules
+### 1 · Segmentation, site footprint (finished)
 
-**1 · Segmentation, site footprint.** PV01 is 0.1 m RGB rooftop imagery from a single
-geography. It is a **site-footprint / array-extent** primitive; it does not compose with
-the thermal stages and it cannot normalise thermal statistics.
+Binary panel masks on D3 (PV01), 256 x 256 RGB rooftop tiles at 0.1 m from a single geography. It is
+a **site-footprint / array-extent** primitive; it does not compose with the thermal stages and it
+cannot normalise thermal statistics. A U-Net written from `torch.nn` layers
+([`unet.py`](src/solar_inspect/segmentation/unet.py)) is trained from scratch with BCE plus soft
+Dice, on a split built by scene and linked across the three rooftop subsets, and selected on val;
+IoU, Dice and the soft Dice loss are written from scratch and unit-tested against hand-computed
+values. A one-threshold colour rule chosen on train and an all-background null model are scored on
+the same tiles. The evaluation config was committed before the test tiles were read once, and a
+transfer check on D2 thermal frames was declared before it ran. Every run is in
+[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
 
-Results will be reported per rooftop subset, never pooled, because the class balance
-across the three subsets differs by a factor of ten:
+Results are reported per rooftop subset, never pooled, because the class balance across the
+three subsets differs by a factor of ten (over all 645 tiles):
 
 | Subset | Masks | Positive pixels | A null all-background model scores |
 |---|---:|---:|---:|
@@ -367,7 +425,8 @@ across the three subsets differs by a factor of ten:
 That spread is the argument for per-subset reporting. Pooling hides it, and a pooled
 figure would make the null model look uniformly mediocre when on Brick it is deceptively
 strong and on SteelTile it is worse than a coin flip, because the positive class is the
-majority there.
+majority there. Per split the shares move: SteelTile's test tiles are 25% panel, and the null model
+scores 0.7453 on them.
 
 ---
 
@@ -377,8 +436,8 @@ majority there.
 python -m pytest
 ```
 
-Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **163 passed**, 7 deprecation
-warnings from torch and pycocotools, in 9 s. No test needs a GPU. Three D4 tests read the
+Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **205 passed**, 7 deprecation
+warnings from torch and pycocotools, in 10 s. No test needs a GPU. Three D4 tests read the
 real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
 dataset. They cover the classification maths, the detection metrics (IoU, NMS, AP at one and
 at ten IoU thresholds, panel-count error), the tuning pass's selection rule and the
@@ -386,7 +445,10 @@ checkpoint-hash guard on the test evaluation, the tracking code (the Kalman filt
 analytic two-step solution and its two limits, SORT and greedy association and track management, the
 D5 generator, the ignore rule, CLEAR MOT matching, ID switches and the count error), the analytics
 primitives (OLS, covariance, Durbin-Watson, VIF, availability, sister ratio, zero-output
-stretches), checked against hand-computed values and against torchvision and statsmodels
+stretches), the segmentation code (IoU, Dice and the soft Dice loss including its two silent
+failures without eps, mask binarisation, the augmentation moving tile and mask together, the U-Net's
+hand-counted parameters, its skips and its receptive field, per-tile counts, the paired tile bootstrap and the
+near-boundary mask), checked against hand-computed values and against torchvision and statsmodels
 where they compute the same definition, and the `Finding` contract's mask encoding. The
 torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every evaluation.
 
@@ -412,7 +474,8 @@ torchmetrics cross-check of AP runs in `scripts/crosscheck_ap.py` and in every e
 - Compensate camera motion. The trackers predict in image space with no estimate of the platform's ego-motion, from the images or from odometry.
 - Try `max_age` beyond 15. Both trackers chose the largest value of the declared grid, and it was not extended.
 - Track on a real flyover. D2's frames do not overlap, so D5's sequences are synthetic; no real multi-frame thermal sequence was used.
-- Build module 1, or module 5's triage and SQL layer. See "Not built yet" above.
+- Compare an ImageNet-pretrained encoder for the U-Net. Module 1 trains from scratch only, so what pretraining would gain on 445 training tiles is not measured.
+- Build module 5's triage and SQL layer. See "Not built yet" above.
 
 ---
 
