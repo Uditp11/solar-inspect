@@ -42,5 +42,11 @@ Download and use **PV01 only**.
   number would hide the thing that most affects the metric. See `docs/DATA.md`.
 - The three subsets are the natural scene boundary for splitting. Random tile
   assignment would leak, because adjacent tiles come from the same orthophoto.
+
+  **Retracted, 2026-10-23: see ADR 0005.** Measured, the subsets are not a scene
+  boundary: Brick `PV01_325573_1204537` overlaps two FlatConcrete tiles with
+  pixel-identical content, and a 64-tile FlatConcrete scene and a 43-tile SteelTile
+  scene are adjacent roofs (27 pairs within 4.5 name units). Scenes are therefore built
+  over all three subsets jointly. The sentence above is left in place.
 - If satellite-resolution generalisation ever matters, this decision is revisited and
   the extraction tooling cost is paid then.
