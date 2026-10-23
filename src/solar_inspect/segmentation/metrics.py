@@ -77,8 +77,12 @@ def soft_dice_loss(logits: torch.Tensor, target: torch.Tensor, eps: float = 1.0)
     Summed over the whole batch, not per tile: a per-tile Dice on a tile with no
     panels is 0 / 0 in the limit and its gradient is unstable, and PV01 Brick
     tiles are 5% positive. Computed in float32 whatever autocast hands in. eps
-    makes an empty prediction on an empty target a loss of 0 instead of NaN;
-    under float16, sigmoid(-20) underflows to exactly 0, so that case is real.
+    makes an empty prediction on an empty target a loss of 0. Without it there
+    are two silent failures: a near-empty prediction (logit -20, sigmoid 2e-9 in
+    float32) on an empty target gives a loss of 1.0, a correct mask scored as
+    completely wrong; an exactly-zero one gives 0 / 0 = NaN. torch's float32
+    sigmoid is exactly 0 only below a logit of about -88.5; the tests pin -200,
+    which float16 logits can carry.
     """
     p = torch.sigmoid(logits.float())
     t = target.float()
