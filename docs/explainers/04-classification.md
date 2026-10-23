@@ -105,9 +105,12 @@ reporting it as a field result is, precisely, reporting the one number the base
 rate leaves alone.
 
 The useful thing survives, and it is worth being clear about which half it is.
-**Whether a module is faulty** still triages well at field prevalence: 50%
-precision at 90% recall, flagging 39 modules per 1,000. **Which fault it has** does
-not. That is the honest summary of what this module would be good for.
+**Whether a module is faulty** still triages reasonably at field prevalence: with
+the threshold chosen on val for 50% precision, the test result is 43% precision at
+91% recall, flagging 47 modules per 1,000. (An earlier threshold, chosen on the test
+scores themselves, gave 50% at 90% recall and 39 per 1,000; those figures are
+optimistic and superseded.) **Which fault it has** does not survive. That is the
+honest summary of what this module would be good for.
 
 ### Why a small model at all
 

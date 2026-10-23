@@ -330,6 +330,13 @@ precision. Prevalence hurts precisely the classes No-Anomaly leaks into.
 
 ### The threshold, chosen for a stated precision target rather than for macro-F1
 
+> **Correction, 23 Oct 2026.** The threshold in this section, t = 0.7151, was chosen by
+> sweeping the **test** scores of the single test run (`scripts/posthoc_cls_d1.py`), so the
+> test precision and recall at that threshold are optimistic. The table and text below are
+> kept as they were, as the output of that script. The threshold has been re-chosen on val
+> and applied to test once: see [The triage threshold, re-chosen on val](#the-triage-threshold-re-chosen-on-val).
+> At the val-chosen threshold the test precision at 2.2% is 0.4290, not 0.5019.
+
 Flag a module if the calibrated P(any anomaly) ≥ t. The ranking is
 prevalence-invariant — the reweighting is one constant per group, so it is a
 monotone transform — which is why the sweep runs on the ordinary score and only
@@ -357,6 +364,50 @@ can send a crew to 39 modules per 1,000 and expect half of them to be real. You
 cannot tell that crew *what* is wrong: at that operating point Offline-Module
 precision is 0.20 and Hot-Spot is 0.19. Whether a module is faulty and which fault
 it has are different problems, and only the first one is answered at 2.2%.
+
+### The triage threshold, re-chosen on val
+
+Replaces the test-chosen threshold above. Rule committed first in
+`configs/cls_triage_threshold.yaml` [`1876c4a`](../../../commit/1876c4a), before any new code
+read a test logit; `at_threshold()` / `pick_threshold()` and `scripts/threshold_val_d1.py`
+[`217edc2`](../../../commit/217edc2), run `cls_triage_threshold_20261023T171026Z` at `217edc2`,
+clean. No model is run: the val and test logits saved by the one test pass. T = 2.0463 (fitted on
+val, read at full precision, 2.046286); score = calibrated P(any anomaly); reweighting to 2.2% under
+A1 and A2, each split with its own No-Anomaly share; the same rule as above (highest recall with
+precision at 2.2% >= 0.50; recall ties to the higher threshold). "Flags per 1,000" is at field
+prevalence, as in the table above.
+
+Val sweep, 2,988 images (No-Anomaly share 0.5013):
+
+| t | flags per 1,000 modules | recall | precision as measured | **precision @ 2.2%** |
+|---:|---:|---:|---:|---:|
+| 0.10 | 253.3 | 0.9799 | 0.8044 | 0.0851 |
+| 0.25 | 104.0 | 0.9604 | 0.9185 | 0.2031 |
+| 0.50 | 54.6 | 0.9403 | 0.9642 | 0.3786 |
+| **0.6110** | **40.7** | **0.9295** | 0.9781 | **0.5026** |
+| 0.90 | 24.0 | 0.8530 | 0.9937 | 0.7823 |
+| 0.95 | 20.5 | 0.8121 | 0.9967 | 0.8725 |
+| 0.99 | 15.2 | 0.6322 | 0.9979 | 0.9142 |
+
+**Chosen on val: t = 0.6110** (0.611012).
+
+| test, 3,007 images, t = 0.6110 applied once | flags | flags per 1,000 modules | recall | precision as measured | **precision @ 2.2%** |
+|---|---:|---:|---:|---:|---:|
+| **val-chosen threshold** | 1,417 | **46.8** | **0.9131** | 0.9711 | **0.4290** |
+| threshold chosen on test (optimistic), superseded: t = 0.7151 | 1,380 | 39.3 | 0.8958 | 0.9783 | 0.5019 |
+
+The second row is the same rule run on the test scores by the same script, printed as a check
+and not used: it gives back t = 0.7151 and the numbers in the section above exactly, so the only
+change is the split the threshold was chosen on.
+
+**At the val-chosen threshold the test precision at field prevalence is 0.43, below the 50%
+target it was chosen for.** About three real defects per seven dispatches, at recall 0.91, with
+46.8 dispatches per 1,000 modules. The gap from val (0.5026) to test (0.4290) at one threshold is
+the usual cost of choosing on one sample and reporting on another; at 2.2% prevalence precision
+is steep in the false-positive rate (on test a No-Anomaly image weighs about 45 times an anomaly), so a
+small shift in the No-Anomaly score tail moves it a lot. The conclusion of the section above
+stands in weakened form: whether a module is faulty is still the half that survives the
+prevalence shift, at a little under one real defect per two dispatches.
 
 ## Distillation — three rows, on val, and the KD gain is nothing
 
