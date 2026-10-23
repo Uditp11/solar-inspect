@@ -1895,3 +1895,111 @@ on D2 for any of those.
 one output pixel of the depth-4 U-Net depends on a 252 x 252 px input window, measured by
 back-propagating from the centre output pixel through a linearised copy (ReLU removed, max pooling
 made average pooling). The trained base-32 net, linearised or not, measures the same.
+
+## D1 triage: work-order list from the saved test pass
+
+Rule committed first in `configs/triage.yaml` [`b2d97a9`](../../../commit/b2d97a9); CoA table
+in ADR 0006 [`5e44e6c`](../../../commit/5e44e6c); `Triage` and `dispatch()`
+[`4cb1499`](../../../commit/4cb1499); `scripts/triage_d1.py` [`6c5cf4d`](../../../commit/6c5cf4d),
+run `triage_d1_20261023T171927Z` at `6c5cf4d`, clean. No model is run.
+
+**The test order, proven first.** `logits.npz` stores no image ids. The pinned split's test rows,
+in their pinned order, give back row for row the saved test and val labels and the saved
+per-image near-duplicate cosine (a continuous per-image value, so it pins identity, not just
+class), the recorded confusion matrix, and the recorded macro-F1 (0.6956, difference below
+1e-12). All seven checks pass.
+
+Calibrated probabilities at T = 2.0463 (fitted on val); one finding per test image;
+`delta_dn_uncalibrated` = 99th-percentile minus median DN of the raw 8-bit crop, filled on every
+finding and used for nothing. Flag at P(any anomaly) >= t_val = 0.6110 (chosen on val, read from
+`cls_triage_threshold_20261023T171026Z`).
+
+**Dispatched: 1,417 of 3,007 test modules, equal to the threshold run's test flags; 46.8 per
+1,000 modules at 2.2% prevalence** (471.2 per 1,000 as counted on D1 test, which is half
+anomalous). 27 dispatched modules have No-Anomaly as their single largest probability; they are
+dispatched on P(any anomaly) and named by their largest anomaly class.
+
+| | dispatched | per 1,000 as counted | **per 1,000 at 2.2%** |
+|---|---:|---:|---:|
+| CoA 3 | 302 | 100.4 | **8.87** |
+| CoA 2 | 1,115 | 370.8 | **37.95** |
+| extent: module | 103 | 34.3 | 5.33 |
+| extent: substring | 249 | 82.8 | 5.55 |
+| extent: cell | 661 | 219.8 | 19.21 |
+| extent: external | 404 | 134.4 | 16.73 |
+
+Per predicted class, beside the precision at 2.2% from the base-rate table above (argmax
+predictions, independent of the threshold, not recomputed):
+
+| triage class | CoA | extent | dispatched | per 1,000 at 2.2% | precision at 2.2% |
+|---|---:|---|---:|---:|---:|
+| Diode | 3 | substring | 224 | 5.18 | 0.5978 |
+| Hot-Spot-Multi | 3 | cell | 27 | 1.03 | **0.2584** |
+| Hot-Spot | 3 | cell | 26 | 2.29 | **0.1941** |
+| Diode-Multi | 3 | substring | 25 | 0.36 | 0.8400 |
+| Cell | 2 | cell | 332 | 10.58 | 0.3022 |
+| Vegetation | 2 | external | 248 | 8.08 | 0.3794 |
+| Cell-Multi | 2 | cell | 145 | 2.75 | 0.4232 |
+| Shadowing | 2 | external | 133 | 8.32 | 0.1977 |
+| Cracking | 2 | cell | 131 | 2.55 | 0.5182 |
+| Offline-Module | 2 | module | 103 | 5.33 | 0.2022 |
+| Soiling | 2 | external | 23 | 0.34 | 0.5217 |
+
+At field prevalence the CoA 3 rows rest partly on Hot-Spot (precision 0.19) and Hot-Spot-Multi
+(0.26). Whether a module is faulty survives the prevalence shift; which fault it has does not,
+as the base-rate section measured, and the CoA is set by the fault.
+
+**Post-hoc, labelled post-hoc, changes no reported number.** Of the 302 CoA 3 dispatches, 283
+(93.7%) have a true class that is also a CoA 3 mode; that is on D1 test's own class mix, half
+anomalous, not at field prevalence. Of the 328 test modules whose true class is a CoA 3 mode, 20
+are not dispatched at all.
+
+## SQL layer: queries run on SQLite
+
+Schema, the five queries, `analytics/sql.py` (build, query, a pandas equivalent per query) and
+`tests/test_sql.py` (hand-worked 17-row fixture) [`e29a16e`](../../../commit/e29a16e);
+`scripts/sql_d4.py` [`203c80b`](../../../commit/203c80b), fixed in
+[`86ba257`](../../../commit/86ba257). Run `sql_d4_20261023T172610Z` at `86ba257`, clean.
+SQLite 3.42 through Python's `sqlite3`. The database lives in the run dir, never in git.
+
+**The first run, `sql_d4_20261023T172552Z` at `203c80b`, is superseded.** It keyed the plant
+and inverter tables 1 and 2 while D4's PLANT_ID is 4135001 and 4136001, so query 4's join to the
+per-timestamp sister ratios matched nothing and its Spearman came back empty without stopping
+the script. `86ba257` keys them by PLANT_ID and stops if that join misses an inverter.
+
+Tables: generation 136,472 rows (D4 rows with a weather reading, both plants), weather 6,441,
+plant 2, inverter 44 (slopes and sister ratios recomputed through `rank_d4.plant_tables`),
+coa_class 12, finding 3,007. DC_POWER is stored as recorded; `plant.dc_power_misscaled` is 1 for
+4135001 (median AC/DC 0.0978) and 0 for 4136001 (0.9784). No query reads DC_POWER. AC_POWER is
+in kW (the dataset's data card); per inverter-day, the sum of AC_POWER x 0.25 h over the
+end-of-day DAILY_YIELD has median 0.9997 (Plant 1) and 0.9990 (Plant 2), so energy is
+kWh = sum of AC_POWER x 0.25.
+
+Every query equals its pandas equivalent: same columns and order, integer and text columns
+identical, float columns to a relative 1e-12.
+
+| query | rows | largest float difference | beyond its twin |
+|---|---:|---:|---|
+| 1 per plant per day, HAVING >= 40 daylight intervals | 67 of 68 plant-days | 3.5e-10 kWh | dropped: 4135001 on 2020-05-20, 37 daylight intervals |
+| 2 slope rank within plant | 44 | 0 | equal to `rank_d4.py`'s ranks for all 44 |
+| 3 gaps by LAG | 44 | 0 | every inverter has at least one gap; 4135001: 336 gaps, 3,030 missing intervals; 4136001: 120 gaps, 4,110 |
+| 4 sister ratio on daily energy | 44 | 5.6e-16 | Spearman with the per-timestamp sister ratio: **0.983** (4135001), **0.932** (4136001) |
+| 5 work orders | 1,417 | 0 | equal to the triage run's `work_orders.csv` row for row |
+
+The float differences in query 1 are summation order: SQLite and pandas add about 3,000
+energies of up to 1,400 kW per plant-day in a different order. Query 1, 4135001: 2020-05-15,
+54 daylight intervals, 137,707.7 kWh, median irradiation 0.3522 kW/m²; median day over the kept
+days 159,010.8 kWh (4135001) and 121,598.6 kWh (4136001). Query 3's largest gaps are the four
+4136001 inverters with the mid-period hole: 6 gaps and 909 missing intervals each.
+
+Query 4 is not the existing sister ratio and is not forced to agree with it. It sums every row
+of a day (dawn, dusk and zero-output intervals included) and takes the median over days; the
+existing ratio uses counted intervals only (>= 0.1 kW/m²) and takes the median over timestamps.
+The four inverters with the 9-day hole have 26 days instead of 34, and the hole's first and last
+days are partial days. Bottom three: identical in 4135001 (1BY6WEcLGh8j5v7, bvBOhCH3iADSZry,
+ih0vzX44oOqAx2f); in 4136001 two of three shared (daily: Quc1TzYxW2pYoWX 0.597, Et9kgGMDl729KT4
+0.712, LYwnQax7tkwH5Cb 0.803; per timestamp: Et9kgGMDl729KT4, Quc1TzYxW2pYoWX, rrq4fwE8jgrTyWY).
+
+Query 5, top 5 per CoA: CoA 3, dispatch 1 to 5, all Diode (`1998.jpg`, `1884.jpg`, `1168.jpg`,
+`1665.jpg`, `1835.jpg`, P(class) 0.9969 to 0.9935); CoA 2, dispatch 303 to 307, all
+Offline-Module (`719.jpg`, `494.jpg`, `757.jpg`, `545.jpg`, `774.jpg`, P(class) 0.9993 to 0.9971).
