@@ -1,0 +1,30 @@
+# D3 (PV01) U-Net from scratch. Committed before its first run.
+#
+# Split: configs/d3_split.json (by scene, ADR 0005). Trained on train tiles of all
+# three subsets together; guard tiles are not used. Normalisation: per-channel
+# mean and std over train tiles only.
+#
+# Evaluation is on the VALIDATION split, per subset; train.py hardcodes that.
+# Best epoch = highest mean of the three per-subset val IoUs (Brick, FlatConcrete,
+# SteelTile), declared here before the first run. Not pooled IoU: FlatConcrete is
+# 60 of the 95 val tiles and would decide it alone.
+#
+# Augmentation is geometric only: 90-degree rotations and a horizontal flip, which
+# together give all eight flips and rotations of the tile. Nadir rooftop tiles have
+# no preferred orientation. RGB colour jitter would also be legitimate on this data;
+# it is left out to keep one change at a time.
+
+seed: 0
+epochs: 100
+batch_size: 16
+eval_batch_size: 32
+lr: 0.001
+weight_decay: 0.0001
+amp: true
+base: 32            # channels of the first encoder block, doubled at each pool
+depth: 4            # pools: 256 -> 16 at the bottom
+loss:
+  bce: 1.0
+  dice: 1.0         # soft Dice summed over the batch, eps 1 (metrics.py)
+augment: true
+select: mean_val_iou_per_subset
