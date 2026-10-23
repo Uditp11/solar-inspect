@@ -413,10 +413,19 @@ The two datasets differ in everything at once:
 - **content:** PV01 is rooftops in Jiangsu with panels dark blue-grey against brick, concrete or
   steel; D2 is a ground-mounted plant in Greece.
 
-Which of these the collapse comes from is not separated here; a control on greyscaled PV01 tiles
-would separate the loss of colour from the rest, and was not run. The result is what the scope
-statement above says: this module is an RGB footprint primitive and does not carry over to the
-thermal stages.
+A control declared after this result (`configs/seg_grey_control.yaml`) removes only colour: PV01
+val tiles converted to luminance (Y = 0.299 R + 0.587 G + 0.114 B), replicated to three channels,
+through the same input path. With the conversion switched off the script reproduces the val IoUs
+exactly. With it on, val IoU falls from 0.9074 / 0.9272 / 0.9455 to **0.0407 / 0.0466 / 0.0013**
+(Brick / FlatConcrete / SteelTile); the model predicts 0.2% to 2% of pixels as panel where panels
+cover 6% to 57%, and what it does predict is mostly panel (precision 0.51 to 0.94). By the rule
+declared before the run (below 0.10 in all three subsets), **colour is enough to explain the
+collapse**: the model needs colour on its own domain, so the thermal failure needs no explanation
+specific to thermal imagery. The control removes colour only. It does not say whether resolution,
+viewpoint or content would also break the model on their own.
+
+The result is what the scope statement above says: this module is an RGB footprint primitive and
+does not carry over to the thermal stages.
 
 ---
 
@@ -439,4 +448,6 @@ thermal stages.
 - **No ablation of the loss or the augmentation.** BCE + Dice at 1 : 1 and the eight-element
   flip/rotation group were declared and used, not compared with alternatives.
 - **Does not transfer to thermal.** On D2 thermal frames it predicts nothing, so it cannot stand in
-  for a thermal footprint.
+  for a thermal footprint. On greyscaled PV01 val tiles it collapses too (IoU 0.04, 0.05, 0.001),
+  so the model depends on colour; that control does not test resolution, viewpoint or content
+  separately.

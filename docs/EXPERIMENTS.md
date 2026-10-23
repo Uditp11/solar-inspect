@@ -1804,8 +1804,39 @@ replicated); ground sampling distance (PV01 0.1 m; D2's is not documented by the
 30 m, consistent with the median box of 56 x 37 px); viewpoint (both near-nadir drone views, but
 PV01 tiles are crops of orthophotos and D2 frames whole camera frames); content (rooftops in Jiangsu
 with blue-grey panels against brick, concrete or steel; a ground-mounted plant in Greece, rows bright
-against vegetation in the overlay frames). Which difference causes the collapse is not separated; a
-control on greyscaled PV01 tiles was not declared and not run.
+against vegetation in the overlay frames). Which difference causes the collapse is not separated by
+this check alone; the colour control below was declared afterwards.
+
+### D3 U-Net on greyscaled PV01 val: the colour control
+
+Post-hoc relative to the thermal result above, declared before it ran. Rules committed first in
+`configs/seg_grey_control.yaml` [`f6a4ddc`](../../../commit/f6a4ddc); `luminance()` and
+`scripts/seg_grey_control.py` [`af7d75e`](../../../commit/af7d75e), run `seg_grey_20261023T170737Z`
+at `af7d75e`, clean. The pinned `best.pt` (same SHA-256 as `seg_eval.yaml`), unchanged; PV01
+**val** tiles only (95); the test split is not read. Each tile converted to BT.601 luminance
+(Y = 0.299 R + 0.587 G + 0.114 B, rounded half to even, uint8), replicated to three channels, then
+the thermal check's input path (/ 255, PV01 train mean and std from the checkpoint); threshold 0.5.
+
+Sanity check first: the same script with the conversion off (`--rgb`, writes nothing) gives val IoU
+0.9074 / 0.9272 / 0.9455, minus the training log's epoch 87 = 0.0 in every subset.
+
+| PV01 val | tiles | greyscale IoU | colour-input IoU (epoch 87) | predicted fraction | panel share | recall | precision |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Brick | 21 | **0.0407** | 0.9074 | 0.0033 | 0.0647 | 0.0411 | 0.8134 |
+| FlatConcrete | 60 | **0.0466** | 0.9272 | 0.0206 | 0.4123 | 0.0467 | 0.9365 |
+| SteelTile | 14 | **0.0013** | 0.9455 | 0.0015 | 0.5692 | 0.0013 | 0.5142 |
+
+**Reading, by the declared rule: "colour is enough to explain the collapse"** (greyscale IoU below
+0.10 in all three subsets). Without colour, on its own domain, the model predicts almost nothing
+(0.2% to 2% of pixels, where panels are 6% to 57%); what it does predict is mostly panel. Median
+greyscale tiles (overlays in the run dir): Brick `PV01_325500_1203825` (0.0000), FlatConcrete
+`PV01_325331_1205383` (0.0083; panel rows plainly visible in the greyscale tile, almost all missed),
+SteelTile `PV01_325360_1205530` (0.0007).
+
+What this separates: the PV01 U-Net depends on colour, so the thermal collapse needs no explanation
+specific to thermal imagery. What it does not: whether resolution, viewpoint or content would also
+break the model on their own. It removes colour only; a model that ignored colour could still fail
+on D2 for any of those.
 
 ### Receptive field
 

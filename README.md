@@ -220,7 +220,10 @@ checkpoint allowed, was committed in [`49c44d9`](../../commit/49c44d9) before th
 - **The panel share shifts between splits** (SteelTile test 25% against 53% in train; FlatConcrete
   val and test 41% and 44% against 30%), so val, train and test numbers are not directly comparable.
 - **It does not transfer to thermal.** Run unchanged on D2's 51 thermal val frames, it marks one
-  pixel in 16.7 million as panel where ground-truth boxes cover 46%.
+  pixel in 16.7 million as panel where ground-truth boxes cover 46%. A control that removes only
+  colour, PV01 val tiles converted to greyscale, collapses it as well (val IoU 0.0407 / 0.0466 /
+  0.0013 against 0.9074 / 0.9272 / 0.9455 in colour): the model needs colour, which is enough to
+  explain the thermal result; resolution, viewpoint and content are not tested separately.
 
 The split is by scene, linked across all three subsets, with SteelTile cut into blocks and a guard
 band ([ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). The walkthrough is in
