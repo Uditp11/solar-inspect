@@ -551,6 +551,74 @@ results, limits.
 - [04 Classification](docs/explainers/04-classification.md): the from-scratch CNN against ResNet-18, calibration, the base-rate correction and distillation.
 - [05 Analytics](docs/explainers/05-analytics.md): the regression and its diagnostics, the per-inverter analysis, triage by failure mode and the SQL layer.
 
+## Reproduce
+
+Every module starts from the data steps in [Data](#data) (download, then the D2, D1 and D3 splits,
+in that order). Then, per module, in order. Steps marked `# GPU` ran on one CUDA GPU (training, network
+passes, the D1 pairwise similarity); the rest are CPU. `<run>` is the timestamped folder the previous step wrote under
+`runs/` (gitignored). The three test evaluations refuse to run unless their config is committed and
+unmodified (for modules 2 and 4, also pushed), and the detection and segmentation ones also unless the checkpoint's SHA-256 equals the
+one committed in the config: a retrained checkpoint has a different hash, so reproducing a test
+number from a new training run starts by committing that run's hash.
+
+```bash
+# 1 Segmentation (D3)
+python scripts/train_seg.py                                       # GPU
+python scripts/baseline_seg.py                                    # colour rule, chosen on train
+python scripts/eval_seg.py val                                    # GPU
+python scripts/eval_seg.py test                                   # GPU, once
+python scripts/seg_overlays.py runs/seg_eval_test_<run>
+python scripts/seg_thermal_negative.py                            # GPU, D2 val frames
+python scripts/seg_grey_control.py                                # GPU, PV01 val tiles
+
+# 2 Detection (D2)
+python scripts/crosscheck_ap.py
+python scripts/train_det.py                                       # GPU
+python scripts/eval_val_det.py runs/det_<run>/weights/best.pt max_det=3000   # GPU
+python scripts/tune_det.py                                        # GPU, the tuning pass
+python scripts/operating_point_det.py runs/det_val_<run>
+python scripts/nms_sweep_det.py runs/det_oppoint_<run>
+python scripts/nms_crosscheck_det.py runs/det_nms_sweep_<run>
+python scripts/eval_test_det.py runs/det_<run>/weights/best.pt    # GPU, once
+python scripts/bootstrap_test_det.py runs/det_test_<run>
+python scripts/error_analysis_det.py runs/det_test_<run> runs/det_val_<run>
+
+# 3 Tracking (D5, built from D2 val frames and the module 2 checkpoint)
+python scripts/make_flyover.py runs/det_<run>/weights/best.pt     # GPU, the default run
+python scripts/make_flyover.py runs/det_<run>/weights/best.pt --set pan_speed=2   # GPU, one per sweep cell
+python scripts/track_flyover.py dev runs/flyover_<default run>
+python scripts/track_flyover.py sweep runs/flyover_<default run> runs/flyover_<cell run> ...
+python scripts/dedup_flyover.py runs/flyover_<default run>
+python scripts/motion_flyover.py runs/flyover_<run> ...
+python scripts/plot_track_sweep.py runs/track_sweep_<run>
+
+# 4 Classification (D1)
+python scripts/ablation_d1.py                                     # GPU, imbalance ablation, val
+python scripts/ablation_d1.py configs/cls_resnet18.yaml           # GPU, ResNet-18, val
+python scripts/eval_test_d1.py                                    # GPU, once
+python scripts/posthoc_cls_d1.py runs/cls_final_test_<run>
+python scripts/threshold_val_d1.py
+python scripts/distill_d1.py                                      # GPU
+python scripts/near_dup_d1.py                                     # GPU, pairwise similarity
+python scripts/leakage_check_d1.py                                # GPU, retrains over 3 seeds
+
+# 5 Analytics (D4; triage reads module 4's test run)
+python scripts/ols_d4.py
+python scripts/diagnostics_d4.py
+python scripts/rank_d4.py
+python scripts/r2_split_d4.py
+python scripts/confounders_d4.py
+python scripts/triage_d1.py
+python scripts/sql_d4.py
+
+# Figures (reads the runs above by name)
+python scripts/make_figures.py
+```
+
+Every script listed imports cleanly in the project environment (checked on 23 Oct 2026); none was
+re-run end to end for this list. The run folders the scripts name in their configs and in
+`scripts/make_figures.py` are the ones the ledger records.
+
 ---
 
 ## Tests
@@ -559,8 +627,8 @@ results, limits.
 python -m pytest
 ```
 
-Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **231 passed**, 7 deprecation
-warnings from torch and pycocotools, in 9 s. No test needs a GPU. Three D4 tests read the
+Run on 23 Oct 2026 (Python 3.11.6, torch 2.11.0+cu128): **232 passed**, 7 deprecation
+warnings from torch and pycocotools, in 10 s. No test needs a GPU. Three D4 tests read the
 real CSVs and are skipped when `data/d4/` has not been downloaded; everything else needs no
 dataset. They cover the classification maths, the detection metrics (IoU, NMS, AP at one and
 at ten IoU thresholds, panel-count error), the tuning pass's selection rule and the
@@ -612,3 +680,14 @@ releasing the complete corresponding source of the entire derivative work, so th
 is AGPL-3.0 too. Shipping something like this commercially, you would want an enterprise
 licence or a differently-licensed detector, which is one reason the metrics here are
 written by hand rather than pulled in from more of the stack.
+
+**Data and figure credits.** No dataset is committed; each is downloaded from its source by
+`scripts/download_data.py` ([`docs/DATA.md`](docs/DATA.md)). D1, InfraredSolarModules
+([github.com/RaptorMaps/InfraredSolarModules](https://github.com/RaptorMaps/InfraredSolarModules)),
+MIT. D2, Thermal PV Panel Detection (UAV) ([zenodo.org/records/16420123](https://zenodo.org/records/16420123)),
+CC-BY-4.0. D3, PV segmentation dataset, PV01 only ([zenodo.org/records/5171712](https://zenodo.org/records/5171712)),
+CC-BY-4.0. The figures in [`docs/figures/`](docs/figures/) that show D2 or D3 pixels are those
+images with overlays added by this repo's scripts (masks, boxes, labels, track ids); the D5 frames
+in the tracking figure are D2 val frames cropped, rotated and scaled by the D5 generator. D4, Solar
+Power Generation Data (Kaggle `anikannal/solar-power-generation-data`), is not openly licensed: it
+is not redistributed, and its figures show derived statistics only, never a row of the data.
