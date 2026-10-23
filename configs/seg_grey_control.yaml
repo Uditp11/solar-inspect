@@ -1,0 +1,50 @@
+# The PV01 U-Net on greyscaled PV01 val tiles: the colour control for the thermal
+# transfer check (configs/seg_thermal_negative.yaml). Declared before it runs, and
+# post-hoc relative to that check's result: on D2 thermal frames the model predicted
+# 1 pixel in total. PV01 and D2 differ in modality, colour, resolution, viewpoint and
+# content at once; this control removes only colour from PV01 and keeps the rest.
+# Nothing here is tuned, and the result is reported whichever way it falls.
+#
+# Tiles: PV01 **val** only (95 tiles). The test split was read once and stays closed.
+split: val
+
+# The model and its threshold, as in configs/seg_eval.yaml. No fine-tuning.
+run: runs/seg_unet_20261023T145359Z
+checkpoint: best.pt
+checkpoint_sha256: 9a2653125d19df6c0883c8c6e0dacfcb42d651738558ae6c710bbfeae0bb8724
+selected_epoch: 87
+threshold: 0.5       # sigmoid > 0.5, i.e. logit > 0
+amp: true
+eval_batch_size: 32
+
+# Conversion: luminance Y = 0.299 R + 0.587 G + 0.114 B (ITU-R BT.601) on the uint8
+# tile, rounded to the nearest integer (numpy's rint) as uint8, replicated to three
+# channels. Then exactly the thermal check's input path: / 255, standardised with the
+# PV01 train per-channel mean and std stored in the checkpoint.
+conversion:
+  luminance: [0.299, 0.587, 0.114]
+
+# Per subset, never pooled, all pixels of the subset counted together (metrics.py,
+# with its 0 / 0 rules): IoU, predicted positive fraction, true panel share, recall,
+# precision. Reported beside the colour-input val IoUs of the selected epoch
+# (0.9074 / 0.9272 / 0.9455; docs/EXPERIMENTS.md).
+metrics: [iou, predicted_fraction, panel_share, recall, precision]
+
+# Reading rule, declared now:
+# - "colour is enough to explain the collapse" if greyscale val IoU < 0.10 in all
+#   three subsets;
+# - "colour does not explain it" if greyscale val IoU >= 0.50 in all three;
+# - otherwise "partial", reported per subset.
+reading:
+  colour_explains_below: 0.10
+  colour_does_not_explain_at_least: 0.50
+
+# Sanity check before the numbers are trusted: the same script with the conversion
+# switched off (--rgb, plain RGB, nothing written) must reproduce the selected epoch's
+# val IoUs exactly.
+
+# Overlays, to runs/ only: per subset, the val tile at the median greyscale IoU (the
+# lower median, position (n - 1) // 2 in ascending order; per-tile IoU by the
+# metrics.py rules), ties by tile name. Greyscale input | truth | prediction, in
+# seg_eval.yaml's colours.
+overlays: [median]
