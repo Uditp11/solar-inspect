@@ -38,3 +38,39 @@ def ece(conf: np.ndarray, correct: np.ndarray, bins: int = BINS) -> float:
         if m.any():
             total += m.mean() * abs(correct[m].mean() - conf[m].mean())
     return float(total)
+
+
+def at_threshold(score: np.ndarray, is_anom: np.ndarray, t: float, prevalence: float) -> dict:
+    """Flag where score >= t: counts as measured, and reweighted to field prevalence.
+
+    The reweighting is the base-rate correction's (assumptions A1 and A2): with
+    the sample's own No-Anomaly share q, an anomaly weighs prevalence / (1 - q)
+    and a normal (1 - prevalence) / q. Recall is unchanged by it; precision and
+    the flag rate per 1,000 modules are the field figures.
+    """
+    is_anom = np.asarray(is_anom, bool)
+    q = 1.0 - is_anom.mean()
+    w = np.where(is_anom, prevalence / (1.0 - q), (1.0 - prevalence) / q)
+    f = np.asarray(score) >= t
+    tp, fp = (w * (f & is_anom)).sum(), (w * (f & ~is_anom)).sum()
+    return {"t": float(t), "flags": int(f.sum()),
+            "flags_per_1000_measured": 1000.0 * f.mean(),
+            "flags_per_1000_field": 1000.0 * (tp + fp) / w.sum(),
+            "recall": float((f & is_anom).sum() / is_anom.sum()),
+            "precision_measured": float((f & is_anom).sum() / f.sum()) if f.any() else float("nan"),
+            "precision_field": float(tp / (tp + fp)) if f.any() else float("nan")}
+
+
+def pick_threshold(score: np.ndarray, is_anom: np.ndarray, prevalence: float,
+                   target: float) -> float | None:
+    """The highest-recall threshold whose precision at field prevalence is >= target.
+
+    Candidates are the distinct scores. Ties in recall go to the higher
+    threshold. None when no candidate reaches the target: no fallback.
+    """
+    best = None
+    for t in np.unique(score)[::-1]:                  # descending: recall never falls
+        r = at_threshold(score, is_anom, t, prevalence)
+        if r["precision_field"] >= target and (best is None or r["recall"] > best[1]):
+            best = (float(t), r["recall"])
+    return None if best is None else best[0]

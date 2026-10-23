@@ -21,7 +21,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from solar_inspect.classification.calibration import ece, nll, softmax
+from solar_inspect.classification.calibration import (at_threshold, ece, nll,
+                                                      pick_threshold, softmax)
 from solar_inspect.classification.train import (class_weights, confusion,
                                                 focal_loss, kd_loss, metrics)
 
@@ -225,3 +226,44 @@ def test_ece_of_an_overconfident_model_is_the_gap():
     conf = np.full(10, 0.9)
     correct = np.array([1.0] * 6 + [0.0] * 4)
     assert ece(conf, correct, bins=1) == pytest.approx(0.3)
+
+
+# --------------------------------------------------------------------------
+# the triage threshold at field prevalence
+#
+# scores 0.9 (anomaly), 0.8 (normal), 0.6 (anomaly), 0.3 (normal); 2 of 4 normal,
+# so prior(No-Anomaly) = 0.5. At p = 0.022 an anomaly weighs 0.022 / 0.5 = 0.044,
+# a normal 0.978 / 0.5 = 1.956; total weight 4.0.
+#   t = 0.9: tp 0.044, fp 0      -> precision@p 1.0,    recall 0.5, 11.0 per 1,000
+#   t = 0.8: tp 0.044, fp 1.956  -> precision@p 0.022,  recall 0.5
+#   t = 0.6: tp 0.088, fp 1.956  -> precision@p 0.04305, recall 1.0
+# Target 0.5: only t = 0.9 qualifies. Target 0.02: all three; t = 0.6 has the
+# highest recall. Target 1.01: none, so None.
+
+S = np.array([0.9, 0.8, 0.6, 0.3])
+A = np.array([True, False, True, False])
+
+
+def test_at_threshold_by_hand():
+    r = at_threshold(S, A, 0.6, 0.022)
+    assert r["flags"] == 3
+    assert r["recall"] == pytest.approx(1.0)
+    assert r["precision_measured"] == pytest.approx(2 / 3)
+    assert r["precision_field"] == pytest.approx(0.088 / 2.044)
+    assert r["flags_per_1000_field"] == pytest.approx(1000 * 2.044 / 4.0)
+
+
+def test_pick_threshold_by_hand():
+    assert pick_threshold(S, A, 0.022, 0.5) == pytest.approx(0.9)
+    assert at_threshold(S, A, 0.9, 0.022)["flags_per_1000_field"] == pytest.approx(11.0)
+    assert pick_threshold(S, A, 0.022, 0.02) == pytest.approx(0.6)
+    assert pick_threshold(S, A, 0.022, 1.01) is None
+
+
+def test_pick_threshold_recall_tie_goes_to_the_higher_threshold():
+    # scores 0.9 (anomaly), 0.85 (normal), 0.3 (normal). t = 0.9 and t = 0.85 both
+    # have recall 1.0; 0.9 at precision 1.0, 0.85 lower. Both pass a target of 0.1,
+    # so the tie goes to the higher threshold, 0.9.
+    s = np.array([0.9, 0.85, 0.3])
+    a = np.array([True, False, False])
+    assert pick_threshold(s, a, 0.5, 0.1) == pytest.approx(0.9)
