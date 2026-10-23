@@ -39,7 +39,7 @@ the assignment is an **upper bound**: it sends a crew with a radiometric camera 
 it, it does not certify a hazard.
 
 The per-mode reasoning cites the IEA-PVPS failure fact sheets: IEA-PVPS T13-30:2025,
-"Photovoltaic Failure Fact Sheets (PVFS), Review 2025", an annex to the Task 13 report
+"Photovoltaic Failure Fact Sheets (PVFS), Review 2025", published with the Task 13 report
 "Degradation and Failure Modes in New Photovoltaic Cell and Module Technologies" (public PDF
 on iea-pvps.org, 83 pages). Page numbers below are PDF pages. Each fact sheet rates safety in
 three categories (no effect; may cause fire, shock or physical danger after a follow-up or

@@ -1,9 +1,9 @@
-# Explainer 05 — Analytics: regression and per-inverter analysis
+# Explainer 05 — Analytics: regression, per-inverter analysis, triage and SQL
 
-Module 5 of the pipeline, regression half. Plant-level regression of inverter AC
-output on weather, its diagnostics, and per-inverter availability and performance
-rankings on D4, real generation data from two plants over 34 days. Triage and the
-SQL layer are the other half and are not built yet.
+Module 5 of the pipeline. Plant-level regression of inverter AC output on weather, its
+diagnostics, and per-inverter availability and performance rankings on D4, real
+generation data from two plants over 34 days; then triage of the classifier's findings
+into a work-order list, and an SQL layer over both (the last part of this document).
 
 Every number here traces to a run logged in `docs/EXPERIMENTS.md` (D4 sections),
 with the commit that produced it. Nothing in this module is held out or tested
@@ -230,6 +230,9 @@ per-inverter number existed:
 | Driscoll-Kraay covariance, ACF, Breusch-Pagan | | statsmodels | |
 | Availability, sister ratio, zero-output stretches | ✓ | pandas grouping | hand-computed toy frames, `tests/test_inverters.py` |
 | Spearman rank correlation | | `scipy.stats.spearmanr` | |
+| Triage, CoA by failure mode from public sources (ADR 0006) | ✓ | none | hand-built dispatch cases and the ADR's table, `tests/test_triage.py` |
+| Triage threshold at field prevalence | ✓ | none | hand-computed, `tests/test_cls_metrics.py` |
+| SQL: hand-written queries; spatial queries written, not run | ✓ | SQLite from Python's standard library (`sqlite3`) | each query against its pandas equivalent, `tests/test_sql.py` and `scripts/sql_d4.py` |
 
 The statsmodels HAC cross-check is exact because the definition is the same:
 statsmodels' default `use_correction=False` applies no small-sample factor, and its
@@ -399,4 +402,268 @@ shortfall within an inverter, and a year of data separates a fault from a season
 
 ## Triage and SQL
 
-Comes with the triage stage.
+The second half of module 5 turns classified findings into an ordered work-order list,
+and puts the analytics and the findings into a database that answers the questions an
+operations team asks of it. Every number here is logged in `docs/EXPERIMENTS.md`
+(sections "The triage threshold, re-chosen on val", "D1 triage: work-order list from the
+saved test pass" and "SQL layer: queries run on SQLite").
+
+### Triage: what a Class of Abnormality is
+
+PV thermography reports classify findings into the three Classes of Abnormality (CoA)
+of IEC TS 62446-3. The standard is not public and was not read for this project; its
+classes are taken from a public peer-reviewed description (Glavaš, Žnidarec, Šljivac and
+Veić, *Applied Sciences* 12(2), 745, 2022):
+
+| CoA | name | recommended action |
+|---|---|---|
+| 1 | no abnormality | no imminent action |
+| 2 | thermal abnormality | check the cause and, if needed, rectify within a reasonable period |
+| 3 | safety-relevant thermal abnormality | interrupt operation promptly, check the cause, rectify |
+
+As described there, the classes carry recommended actions and no power-loss figure.
+
+### Why a contrast cannot be turned into lost energy
+
+The tempting mapping is "a hotter spot costs more energy". The failure modes break it,
+and the IEA-PVPS PV Failure Fact Sheets (IEA-PVPS T13-30:2025, PVFS Review 2025; page
+numbers below are PDF pages) say why for the modes here:
+
+- **A bypass diode is a step, not a slope.** A short-circuited bypass diode takes about a
+  third of the module's output, whatever the size of the thermal pattern it leaves
+  (PVFS 1-15, p. 52, example 1). An open-circuited one is not visible in thermography at
+  all (same page, example 2); only when part of its substring is shaded does it cost much
+  of that substring's power, and then it is a fire hazard (PVFS 1-19, p. 60, example 10).
+- **An open-circuited module is a whole module out of production while the module itself
+  is undamaged** (PVFS 1-19, p. 59, example 1). What it costs depends on how long it stays
+  disconnected, which no image shows.
+- **Uniform soiling loses energy without any hot spot**; only non-uniform soiling forms
+  them (PVFS 1-20, p. 61). The broadest loss is the one with the least contrast.
+- **A single hot cell usually costs very little.** Most modules with a single hot cell
+  have an insignificant power loss (PVFS 1-19, p. 58); the same sheet ties the safety
+  question, not the energy one, to how hot it runs.
+
+So the contrast that makes a finding visible is not the quantity that sets its cost, and
+this data has no calibrated contrast anyway: D1's crops are 8-bit renderings from mixed
+sensors. The triage carries no energy, power-loss or currency figure, and the `Triage`
+record has no field for one.
+
+### CoA by failure mode (ADR 0006)
+
+Each of D1's twelve classes maps to one CoA, one extent and one action
+([ADR 0006](../adr/0006-coa-by-failure-mode.md), which cites a fact sheet and page for
+every row, or says where a row is the project's own assignment):
+
+| D1 class | CoA | extent | recommended action |
+|---|---:|---|---|
+| No-Anomaly | 1 | none | none |
+| Diode, Diode-Multi | 3 | substring | inspect bypass diode and junction box; replace module if faulty |
+| Hot-Spot, Hot-Spot-Multi | 3 | cell | inspect on site with a radiometric camera; replace if confirmed |
+| Offline-Module | 2 | module | check wiring and connectors |
+| Cell, Cell-Multi, Cracking | 2 | cell | inspect; replace if damage confirmed |
+| Soiling | 2 | external | clean |
+| Vegetation | 2 | external | cut vegetation |
+| Shadowing | 2 | external | remove shade source |
+
+**CoA 3 goes to the modes that can be safety-relevant**: bypass-diode and junction-box
+failures can end in burn marks, arcing or fire (PVFS 1-15, p. 51; PVFS 1-14, p. 48), and
+so can hot spots (PVFS 1-19, p. 58). Whether a given finding *is* safety-relevant depends
+on a temperature difference this data cannot carry, so CoA 3 is an **upper bound**: it
+sends a crew with a radiometric camera to confirm it. Two rows are the project's
+assignment rather than the sources': Cell and Cell-Multi are single-cell hot spots, the
+mode the hot-spot sheet describes, kept at CoA 2 while thin-film Hot-Spot is at CoA 3;
+and Cracking, defined by the dataset as cracking on the module surface, would be CoA 3
+under the same rule if it is glass breakage (PVFS 1-8, p. 33).
+
+**Extent** orders work within a CoA: a whole module, then a substring, then a cell, then
+a cause outside the module.
+
+### The dispatch rule
+
+Declared in `configs/triage.yaml` before it ran:
+
+1. **Flag** a module when its calibrated P(any anomaly) = 1 − P(No-Anomaly) ≥ t.
+2. **Name** it by the argmax over the eleven anomaly classes, not over all twelve. A
+   flagged module whose single largest probability is No-Anomaly (27 of them on test)
+   still gets the anomaly class it is most likely to have; a No-Anomaly module is never
+   dispatched.
+3. **Order** by CoA descending, then extent, then calibrated P(class) descending, then
+   image name.
+
+`delta_dn_uncalibrated`, the 99th-percentile minus the median digital number of one raw
+8-bit crop, is filled on every finding and **never used to rank**. It is a contrast within
+one crop. D1's crops come from mixed sensors, so comparing it between two crops compares
+two frames, and a larger value on one crop says nothing about the other.
+
+**The threshold was re-chosen on val.** Module 4 first reported a triage threshold,
+t = 0.7151, chosen for 50% precision at 2.2% prevalence by sweeping the test scores
+themselves, so its test precision (0.502) was optimistic. The same rule run on the val
+logits gives **t = 0.6110** (val: precision at 2.2% 0.5026, recall 0.9295). Applied once to
+test, it gives **precision 0.429 at 2.2% prevalence, recall 0.913, 46.8 dispatches per
+1,000 modules**: below the 50% it was chosen for. The test-chosen figures stay in the
+ledger, labelled as superseded.
+
+### Triage results
+
+Run on the 3,007 D1 test findings, rebuilt from the saved logits of the single test pass.
+No model is run; before anything is used, the image order is proven against what the test
+pass saved (labels and a per-image near-duplicate score row for row, the confusion matrix,
+the macro-F1). Rates at 2.2% are reweightings of D1 test's half-anomalous mix under the
+base-rate correction's assumptions.
+
+| | dispatched | per 1,000 at 2.2% |
+|---|---:|---:|
+| **all** | **1,417** | **46.8** |
+| CoA 3 | 302 | 8.87 |
+| CoA 2 | 1,115 | 37.95 |
+| extent module / substring / cell / external | 103 / 249 / 661 / 404 | 5.33 / 5.55 / 19.21 / 16.73 |
+
+The first 302 work orders are CoA 3; the first five are all Diode at P(class) above 0.993.
+The CoA 2 list starts with Offline-Module, the one module-extent class.
+
+**The CoA rests on the class, and the class is the weak half at field prevalence.** Per
+predicted class, precision at 2.2% (from module 4's base-rate table) is 0.60 for Diode and
+0.84 for Diode-Multi, but **0.19 for Hot-Spot and 0.26 for Hot-Spot-Multi**, two of the four
+CoA 3 classes. Whether a module is faulty survives the prevalence shift; which fault it has
+does not, and the CoA follows the fault.
+
+**Post-hoc, changing no reported number:** of the 302 CoA 3 dispatches, 283 (93.7%) are
+truly a CoA 3 mode, on D1 test's own class mix rather than at field prevalence; of the 328
+test modules truly in a CoA 3 mode, 20 are not dispatched at all.
+
+### SQL: why SQLite, and the schema
+
+The analytics and the findings go into one SQLite file through Python's standard-library
+`sqlite3`: no server, no install, a file that lives in the run directory and never in git.
+136,472 generation rows is small for it, and SQLite has the window functions the queries
+need. The schema (`sql/schema.sql`):
+
+| table | key | what |
+|---|---|---|
+| `generation` | (plant, source_key, date_time) | D4 rows with a weather reading; DC_POWER as recorded |
+| `weather` | (plant, date_time) | one sensor per plant |
+| `plant` | plant | `dc_power_misscaled` (1 for 4135001) and the measured median AC/DC; nothing rescaled |
+| `inverter` | (plant, source_key) | irradiance slope with its interval, median sister ratio (recomputed by the ranking code) |
+| `coa_class` | defect_class | ADR 0006's table, CoA constrained to 1, 2 or 3 |
+| `finding` | finding_id | one row per D1 test image: class, P(class), P(any anomaly), `delta_dn_uncalibrated` |
+
+Indexes on `generation (plant, date_time)`, `finding (triage_class)` and
+`finding (p_any)`. AC_POWER is in kW (the dataset's data card; per inverter-day the sum of
+AC_POWER × 0.25 h matches the end-of-day yield counter, median ratio 0.9997 and 0.9990),
+so a day's energy in kWh is the sum of AC_POWER × 0.25.
+
+### The five queries
+
+One file each in `sql/`. Each has a pandas equivalent in `analytics/sql.py`; both are
+checked against rows worked by hand on a 17-row fixture (`tests/test_sql.py`), and on the
+real data `scripts/sql_d4.py` stops on any difference beyond float rounding.
+
+| query | what | real-data result | cross-check |
+|---|---|---|---|
+| 1 `01_daily_plant` | per plant per day: daylight intervals, AC energy, median irradiance; `HAVING` drops days with fewer than 40 daylight intervals | 67 of 68 plant-days kept; median day 159,011 kWh (4135001) and 121,599 kWh (4136001) | pandas, floats to 3.5e-10 kWh (summation order) |
+| 2 `02_inverter_rank` | `RANK() OVER (PARTITION BY plant ORDER BY slope)` | 44 inverters | pandas, and the ranking code's own ranks: identical |
+| 3 `03_gaps` | steps over 15 minutes between an inverter's consecutive rows, by `LAG()`; count and missing intervals | every inverter has at least one gap; four 4136001 inverters 909 missing intervals each | pandas `diff()`: identical |
+| 4 `04_sister_daily` | each inverter's daily energy over its plant's median inverter that day, then the per-inverter median | 44 inverters | pandas: equal; Spearman with the per-timestamp sister ratio 0.983 and 0.932 |
+| 5 `05_work_orders` | findings at P(any) ≥ t joined to the CoA table, `ROW_NUMBER()` over the dispatch order, rank within CoA by `ROW_NUMBER() OVER (PARTITION BY coa ...)` | 1,417 work orders, 302 CoA 3 | pandas, and the triage run's CSV row for row |
+
+**Query 4 is a different statistic, and the disagreement is the result.** It sums every
+row of a day, dawn and dusk and zero-output intervals included, and takes a median over
+days; the existing sister ratio uses only intervals above 0.1 kW/m² and a median over
+timestamps. Partial days count against an inverter in the daily version: the four 4136001
+inverters with the 9-day hole have 26 days, and the first and last days of the hole are
+partial. The bottom three agree exactly in 4135001 and share two of three in 4136001.
+
+**A median with window functions.** SQLite has no median aggregate. Number the values in
+order within each group and count the group, then keep the middle row (odd count) or the
+two middle rows (even count) and average them:
+
+```sql
+WITH ordered AS (
+    SELECT plant, date(date_time) AS day, irradiation,
+           ROW_NUMBER() OVER (PARTITION BY plant, date(date_time) ORDER BY irradiation) AS rn,
+           COUNT(*)     OVER (PARTITION BY plant, date(date_time))                      AS n
+    FROM weather WHERE irradiation > 0
+)
+SELECT plant, day, AVG(irradiation) AS median_irradiation
+FROM ordered
+WHERE rn IN ((n + 1) / 2, (n + 2) / 2)      -- integer division: one row if n is odd, two if even
+GROUP BY plant, day;
+```
+
+**What changes in Postgres.** The median is one ordered-set aggregate,
+`percentile_cont(0.5) WITHIN GROUP (ORDER BY irradiation)`. Gaps can be found against the
+grid the data should have rather than between the rows it has: `generate_series(start,
+end, interval '15 minutes')` cross-joined with the inverters and anti-joined to
+`generation` lists every missing interval, including those before an inverter's first row
+or after its last, which `LAG()` cannot see. Timestamps become `timestamptz` instead of
+text, and `date_trunc('day', ...)` replaces `date(...)`.
+
+### Spatial queries, written and not run
+
+**Not run: no dataset here carries coordinates, and none are made up.** These are the
+queries for when findings carry positions, in PostGIS syntax:
+
+```sql
+-- NOT RUN. Findings with a position and the survey they come from.
+CREATE TABLE finding_geo (
+    finding_id  text PRIMARY KEY,
+    survey_id   text NOT NULL,
+    geog        geography(Point, 4326) NOT NULL       -- WGS 84; geography measures in metres
+);
+CREATE INDEX finding_geo_gix ON finding_geo USING GIST (geog);
+
+-- (a) Findings within 5 m of a point.
+SELECT finding_id
+FROM finding_geo
+WHERE ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 5.0);
+```
+
+`ST_DWithin` and not `ST_Distance(geog, point) < 5` in the `WHERE`: `ST_DWithin` adds a
+bounding-box test the GiST index can answer, and computes the exact distance only for the
+candidates the index returns; `ST_Distance(...) < 5` is a function of the column, so the
+planner evaluates it on every row and the index is never used. **The SRID 4326 trap:** in a
+`geometry` column with SRID 4326 the units are degrees, so `ST_DWithin(geom, point, 5)`
+means five degrees, hundreds of kilometres. Either cast to `geography`, as above, whose
+distances are metres, or store `geometry` in a projected CRS such as the site's UTM zone
+(`ST_Transform`) and measure in metres there.
+
+```sql
+-- NOT RUN. (b) Match one survey's findings to a later survey's: for each earlier finding,
+-- the nearest later finding within 1 m, if any.
+SELECT a.finding_id AS earlier, b.finding_id AS later, ST_Distance(a.geog, b.geog) AS metres
+FROM finding_geo AS a
+LEFT JOIN LATERAL (
+    SELECT finding_id, geog
+    FROM finding_geo AS b
+    WHERE b.survey_id = :later_survey
+      AND ST_DWithin(a.geog, b.geog, 1.0)
+    ORDER BY a.geog <-> b.geog
+    LIMIT 1
+) AS b ON true
+WHERE a.survey_id = :earlier_survey;
+```
+
+The self-join finds candidates; it does not answer the questions behind it. **Same defect
+or a new one beside it:** with positioning error of the same order as a module's width,
+two neighbouring modules can both fall inside the threshold, and a defect that moved to the
+next cell looks the same as one that stayed. Matching to module identities from the
+as-built layout, rather than to raw points, is what makes "same module" decidable. **Has it
+grown:** that needs a severity measured the same way in both surveys. A class change
+(Cell to Cell-Multi) is an ordinal signal; an uncalibrated contrast is not comparable
+between two frames, let alone two surveys.
+
+### Limits of the triage and SQL
+
+- **One classifier's test findings, not a site.** The 3,007 findings are D1 test crops,
+  half anomalous; every rate at 2.2% is a reweighting under assumptions A1 and A2 of the
+  base-rate correction, not a count from a plant.
+- **No positions.** D1 crops carry no site, string or position, so the ranking has no
+  string position and no count of affected modules, and the spatial queries are not run.
+- **CoA 3 is an upper bound by mode**, and two rows (Cell and Cell-Multi, Cracking) are the
+  project's assignment, not the sources'.
+- **The CoA inherits the classifier's confusions.** At 2.2% prevalence two of the four
+  CoA 3 classes have per-class precision below 0.3.
+- **The dispatch threshold misses its target on test**: 0.429 precision at 2.2% against the
+  0.50 it was chosen for on val.
+- **The SQL runs on one SQLite file** of one 34-day window; nothing here measures
+  concurrency, scale or a production schema.
