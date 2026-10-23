@@ -1533,3 +1533,50 @@ K counts the reported ids left after the ignore rule; ids on panels that fail th
 - Occlusion length 5 to 15 frames changes K - G by at most 40 ids for either tracker at max_age 15.
 - The ignore rule drops 4,359 (greedy), 4,349 (SORT) and 6,257 (no tracker) hypotheses at defaults:
   without it they would count as false positives on real panels.
+
+## D5 tracking: post-hoc motion diagnostic
+
+Fri 23 Oct 2026. **Post-hoc: measured after the held-out sweep, to explain it; changes no setting or
+number.** `scripts/motion_flyover.py` at [`cd77fff`](../../../commit/cd77fff), clean tree, run
+`track_motion_20261023T000731Z`, 39 s. Ground truth only (no detector, no tracker), all 30 sequences
+(development and held-out) of the default run and the three pan-speed runs.
+
+For each ground-truth id, along each run of consecutive visible frames: "stay" predicts the next box as
+the last true box (what greedy IoU matches against); "Kalman" is SORT's filter with SORT's constants,
+started at the run's first box and updated with every true box so far. k = 1 is the next frame; k = 5
+and 10 coast with no update, against the true box k frames later (the occlusion case). The stay
+prediction's k = 1 IoU is the IoU of a true box with itself one frame later. Gate = 0.1.
+
+Median ground-truth box 62.4 to 62.9 x 36.7 to 36.8 px at every speed. Median per-frame centre
+displacement: 2.20 / 3.80 / 5.65 / 7.31 px at pan speed 2 / 4 / 6 / 8.
+
+| pan speed | k | predictions | stay median | stay 10th pct | stay below 0.1 | Kalman median | Kalman 10th pct | Kalman below 0.1 |
+|---|---|---|---|---|---|---|---|---|
+| 2 | 1 | 25,260 | 0.891 | 0.811 | 0 | 0.938 | 0.811 | 0 |
+| 2 | 5 | 19,853 | 0.578 | 0.357 | 0.1% (12) | 0.789 | 0.519 | 0.8% (162) |
+| 2 | 10 | 13,976 | 0.344 | 0.082 | 11.8% | 0.609 | 0.216 | 6.0% |
+| 4 | 1 | 24,401 | 0.824 | 0.743 | 0 | 0.908 | 0.739 | 0 |
+| 4 | 5 | 18,592 | 0.391 | 0.201 | 1.3% (233) | 0.711 | 0.287 | 3.6% (668) |
+| 4 | 10 | 12,517 | 0.135 | 0.000 | 40.7% | 0.477 | 0.000 | 18.7% |
+| 6 | 1 | 24,500 | 0.761 | 0.670 | 0 | 0.867 | 0.641 | 0 |
+| 6 | 5 | 18,071 | 0.251 | 0.088 | 11.9% | 0.623 | 0.087 | 10.8% |
+| 6 | 10 | 11,774 | 0.009 | 0.000 | 71.7% | 0.319 | 0.000 | 34.4% |
+| 8 | 1 | 24,294 | 0.700 | 0.598 | 0 | 0.803 | 0.537 | 0 |
+| 8 | 5 | 17,394 | 0.151 | 0.000 | 37.4% | 0.448 | 0.000 | 23.7% |
+| 8 | 10 | 11,142 | 0.000 | 0.000 | 73.9% | 0.062 | 0.000 | 52.6% |
+
+What it shows, and what it does not:
+
+- One frame ahead, the last box always overlaps the next one: no step at any speed falls below the 0.1
+  gate for either prediction (median displacement 2.2 to 7.3 px against a 62 x 37 px box). At the
+  chosen gate a motion model cannot rescue a one-frame association that the last box would lose.
+  The Kalman prediction has the higher median IoU (0.908 vs 0.824 at pan speed 4), and a lower 10th
+  percentile at pan speed 6 and 8 (0.641 vs 0.670, 0.537 vs 0.598).
+- Coasting, the constant-velocity prediction does **not** drift further than a stationary one on true
+  boxes: its median IoU is higher at every speed and horizon, and fewer of its predictions fall below
+  the gate at k = 10 everywhere and at k = 5 for pan speed 6 and 8. The exception is k = 5 at pan
+  speed 2 and 4, where more Kalman predictions fall below the gate (162 vs 12, 668 vs 233).
+- So on ground-truth boxes the Kalman filter predicts better than "stay", and this diagnostic does not
+  explain the sweep's result. What it leaves untested is the difference between true boxes and the
+  detector's: SORT's filter runs on detections, with duplicates and box jitter, and greedy and SORT
+  also differ in the assignment. Neither was measured here.
