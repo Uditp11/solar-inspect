@@ -40,7 +40,7 @@ from solar_inspect.analytics import sql                              # noqa: E40
 from solar_inspect.analytics.triage import COA_TABLE                 # noqa: E402
 from solar_inspect.classification.train import git_state             # noqa: E402
 
-TRIAGE_RUN = "runs/triage_d1_20261023T171927Z"
+TRIAGE_RUN = "runs/triage_d1_20261023T175635Z"
 # Query 1's HAVING floor, declared before the first run: 40 daylight intervals is
 # 10 hours of the 15-minute grid, most of a mid-May to mid-June day.
 MIN_DAYLIGHT_ROWS = 40
