@@ -20,6 +20,11 @@ Hand-worked cases:
                    distance from each pixel to the nearest pixel of the other
                    class: 5 4 3 2 1 | 1 2 3 4 5. Within 1 px: columns 4, 5.
                    Within 3 px: columns 2..7.
+
+    luminance      Y = 0.299 R + 0.587 G + 0.114 B, rounded:
+                   (255, 0, 0) -> 76.245 -> 76     (0, 255, 0) -> 149.685 -> 150
+                   (0, 0, 255) -> 29.07 -> 29      (255, 255, 255) -> 255
+                   (10, 20, 30) -> 2.99 + 11.74 + 3.42 = 18.15 -> 18
 """
 from __future__ import annotations
 
@@ -28,7 +33,7 @@ import pytest
 import torch
 
 from solar_inspect.segmentation.evaluate import (
-    near_boundary, paired_bootstrap, scores_np, tile_counts,
+    luminance, near_boundary, paired_bootstrap, scores_np, tile_counts,
 )
 from solar_inspect.segmentation.metrics import scores
 
@@ -95,3 +100,11 @@ def test_near_boundary_by_hand():
 def test_a_tile_of_one_class_has_no_boundary(fill):
     # The tile edge is not a mask boundary.
     assert not near_boundary(np.full((8, 8), fill), 3).any()
+
+
+def test_luminance_by_hand_replicated_to_three_channels():
+    px = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255), (10, 20, 30)]
+    rgb = torch.tensor(px, dtype=torch.uint8).T.reshape(1, 3, 1, 5)
+    y = luminance(rgb)
+    assert y.dtype == torch.uint8 and y.shape == (1, 3, 1, 5)
+    assert y[0, :, 0].tolist() == [[76, 150, 29, 255, 18]] * 3

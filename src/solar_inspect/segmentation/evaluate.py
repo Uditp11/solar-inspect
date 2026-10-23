@@ -48,6 +48,18 @@ def colour_rule(rgb: torch.Tensor, feature: str, direction: str, threshold: int)
     return (f >= threshold if direction == ">=" else f <= threshold).unsqueeze(1)
 
 
+def luminance(rgb: torch.Tensor) -> torch.Tensor:
+    """uint8 (N, 3, H, W) -> uint8 (N, 3, H, W): BT.601 luma, rounded, in all three channels.
+
+    Y = 0.299 R + 0.587 G + 0.114 B, computed in float64 and rounded to the nearest
+    integer (ties to even). The colour control for the thermal check: colour is
+    removed, everything else about the tile is kept.
+    """
+    w = torch.tensor([0.299, 0.587, 0.114], dtype=torch.float64, device=rgb.device)
+    y = torch.einsum("nchw,c->nhw", rgb.double(), w).round().clamp(0, 255).to(torch.uint8)
+    return y[:, None].expand(-1, 3, -1, -1).contiguous()
+
+
 def tile_counts(pred: torch.Tensor, target: torch.Tensor) -> np.ndarray:
     """(N, ...) masks -> int64 (N, 3): tp, fp, fn of each tile."""
     p, t = pred.bool().flatten(1), target.bool().flatten(1)
