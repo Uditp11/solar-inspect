@@ -72,3 +72,37 @@ class Finding:
                 "mask_shape is mandatory alongside mask_rle: compressed RLE is "
                 "undecodable without (H, W)."
             )
+
+
+EXTENTS = ("module", "substring", "cell", "external")
+
+
+@dataclass
+class Triage:
+    """Severity of one Finding, kept out of Finding on purpose.
+
+    The Class of Abnormality (CoA 1, 2 or 3) is assigned by failure mode
+    (docs/adr/0006-coa-by-failure-mode.md), never from a pixel value: the data
+    is not radiometric. CoA 1 has extent "none"; every other CoA has one of
+    EXTENTS. There is no power-loss, energy or currency field, and there will
+    not be one: nothing here can measure it.
+    """
+
+    finding_id: str
+    coa: int
+    extent: str
+    action: str
+    coa_basis: str = "failure_mode"
+    dispatch_rank: int | None = None            # 1 = first in the work-order list
+
+    def __post_init__(self) -> None:
+        if self.coa not in (1, 2, 3):
+            raise ValueError(f"coa must be 1, 2 or 3, got {self.coa}")
+        if self.coa_basis != "failure_mode":
+            raise ValueError(f"coa_basis must be 'failure_mode', got {self.coa_basis!r}")
+        if self.coa == 1 and self.extent != "none":
+            raise ValueError("CoA 1 has no extent")
+        if self.coa > 1 and self.extent not in EXTENTS:
+            raise ValueError(f"extent must be one of {EXTENTS}, got {self.extent!r}")
+        if self.dispatch_rank is not None and self.dispatch_rank < 1:
+            raise ValueError(f"dispatch_rank starts at 1, got {self.dispatch_rank}")

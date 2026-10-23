@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from solar_inspect.contract import Finding, decode_rle, encode_rle
+from solar_inspect.contract import Finding, Triage, decode_rle, encode_rle
 
 
 def mask_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -114,3 +114,34 @@ def test_finding_requires_mask_shape_with_rle():
 
     bare = Finding(**common)          # no mask at all is legal -- detection only
     assert bare.mask_rle is None and bare.track_id is None
+
+
+# --------------------------------------------------------------------------
+# Triage: severity in its own record, by failure mode, with no loss field
+
+
+def test_triage_valid_record():
+    t = Triage(finding_id="d1-test-1", coa=3, extent="substring",
+               action="inspect bypass diode and junction box", dispatch_rank=1)
+    assert t.coa_basis == "failure_mode"
+    assert t.dispatch_rank == 1
+
+
+@pytest.mark.parametrize("kw", [
+    {"coa": 0}, {"coa": 4},
+    {"coa_basis": "delta_t"},
+    {"extent": "string"},
+    {"dispatch_rank": 0},
+    {"coa": 1, "extent": "cell"},          # CoA 1 has no extent
+    {"coa": 2, "extent": "none"},          # an abnormality has one
+])
+def test_triage_rejects(kw):
+    base = dict(finding_id="x", coa=2, extent="cell", action="inspect")
+    with pytest.raises(ValueError):
+        Triage(**{**base, **kw})
+
+
+def test_triage_has_no_power_energy_or_currency_field():
+    from dataclasses import fields
+    names = {f.name for f in fields(Triage)}
+    assert names == {"finding_id", "coa", "coa_basis", "extent", "action", "dispatch_rank"}
