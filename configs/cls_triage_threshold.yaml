@@ -1,0 +1,30 @@
+# D1 triage threshold, chosen on val. This replaces a test-chosen threshold:
+# scripts/posthoc_cls_d1.py swept the TEST scores of the single test run and picked
+# t = 0.7151 there, which makes the reported test operating point (precision 0.502 at
+# 2.2%, recall 0.896, 39.3 flags per 1,000) optimistic. Committed before
+# scripts/threshold_val_d1.py reads any test logit.
+#
+# No model is run. Both logit sets were saved by the one test pass.
+source: runs/cls_final_test_20260827T205903Z/logits.npz
+choose_on: [val_logits, val_labels]      # the threshold is picked here only
+apply_once_to: [test_logits, test_labels]
+
+# Calibration temperature, fitted on val by NLL (docs/EXPERIMENTS.md, Calibration),
+# read at full precision from the run's posthoc.json and checked against this value.
+temperature: 2.0463
+
+# Score: calibrated P(any anomaly) = 1 - P(No-Anomaly). A module is flagged when
+# score >= t.
+null_class: No-Anomaly
+
+# Reweighting to field prevalence, as in docs/EXPERIMENTS.md (Base-rate correction),
+# under its assumptions A1 (the confusion structure transports unchanged) and A2 (only
+# the anomaly / no-anomaly ratio shifts). Each split is reweighted with its own
+# No-Anomaly share: anomalies by p / (1 - prior), normals by (1 - p) / prior.
+field_prevalence: 0.022
+
+# The rule, unchanged from the August choice: among candidate thresholds (every
+# distinct val score), the one with the highest recall whose precision at field
+# prevalence is >= the target; ties in recall go to the higher threshold. If no
+# threshold reaches the target on val, that is the result: no fallback threshold.
+precision_target: 0.50
