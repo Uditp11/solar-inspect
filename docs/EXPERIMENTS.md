@@ -1363,3 +1363,173 @@ Per cell and tracker (no tracker, greedy IoU, SORT), summed over the 20 sequence
 (hand-written, motmetrics' beside it), FP, FN, K, G, K - G, hypotheses dropped by the ignore rule,
 bounces (pan-speed rows), and the per-sequence median and range of (K - G) / G. Where greedy and SORT
 give the same numbers, that is stated. Headline at defaults, held-out: the dedup line per tracker.
+
+## D5 tracking: development grid and held-out sweep
+
+Fri 23 Oct 2026. Definitions as declared above ([`91c597e`](../../../commit/91c597e)). Code: metrics
+[`8e04ee6`](../../../commit/8e04ee6); one-parameter override for `scripts/make_flyover.py`
+[`44e45da`](../../../commit/44e45da); `scripts/track_flyover.py` [`d777597`](../../../commit/d777597);
+`scripts/plot_track_sweep.py` [`330df77`](../../../commit/330df77).
+
+**Synthetic data: MOTA and IDF1 below check the implementation; they are not a performance result.**
+
+Checks that held on every frame scored: the visible ground truth recomputed from the cached homography
+and band equals the cached ground truth (ids exact, boxes to float tolerance), so the ignore boxes come
+from the same geometry; and the hand-written ID-switch count equals motmetrics' `num_switches` on every
+sequence of all 61 development settings and all 48 sweep cell-tracker pairs, so no reconciliation was
+needed.
+
+Regenerated runs for the sweep, each `scripts/make_flyover.py --set` at `7a5ed7a`, clean tree, same
+checkpoint and seeds: pan speed 2 / 6 / 8 `flyover_20261022T235341Z` / `T235402Z` / `T235422Z`;
+occlusion 5 / 15 `T235441Z` / `T235458Z`; detector conf 0.1 / 0.5 `T235510Z` / `T235528Z`. The two conf
+runs reproduce the default run's ground truth exactly, and the conf 0.5 detections equal the default
+run's detections with score >= 0.5 on all 20 held-out sequences.
+
+Dev grid, development seeds 0-9 (600 frames, 11,874 detections, G = 294), run `flyover_20261022T221314Z`, `scripts/track_flyover.py dev` at `d777597`, clean tree. Sum |K - G| is over the 10 seeds; sum IDF1 is the sum of the 10 per-seed IDF1 values; IDSW is summed, hand-written / motmetrics.
+
+No tracker: K 8,689, sum |K - G| 8,395, sum IDF1 0.3802, 3,185 hypotheses dropped by the ignore rule.
+
+| max_age | min_hits | IoU gate | greedy sum abs(K - G) | greedy sum IDF1 | greedy K | greedy IDSW | SORT sum abs(K - G) | SORT sum IDF1 | SORT K | SORT IDSW |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | 0.1 | 341 | 6.7577 | 635 | 167 / 167 | 347 | 6.7459 | 641 | 173 / 173 |
+| 1 | 1 | 0.3 | 343 | 6.7824 | 637 | 167 / 167 | 359 | 6.7860 | 653 | 172 / 172 |
+| 1 | 1 | 0.5 | 317 | 6.8758 | 611 | 166 / 166 | 395 | 6.6966 | 689 | 199 / 199 |
+| 1 | 3 | 0.1 | 251 | 6.9062 | 545 | 166 / 166 | 253 | 6.9077 | 547 | 169 / 169 |
+| 1 | 3 | 0.3 | 245 | 6.9220 | 539 | 166 / 166 | 248 | 6.9401 | 542 | 168 / 168 |
+| 1 | 3 | 0.5 | 231 | 6.9775 | 525 | 166 / 166 | 253 | 6.8458 | 547 | 186 / 186 |
+| 3 | 1 | 0.1 | 325 | 6.7852 | 619 | 167 / 167 | 327 | 6.7758 | 621 | 172 / 172 |
+| 3 | 1 | 0.3 | 341 | 6.8202 | 635 | 167 / 167 | 347 | 6.8110 | 641 | 175 / 175 |
+| 3 | 1 | 0.5 | 314 | 6.9155 | 608 | 166 / 166 | 393 | 6.7072 | 687 | 204 / 204 |
+| 3 | 3 | 0.1 | 250 | 6.9161 | 544 | 165 / 165 | 249 | 6.9228 | 543 | 166 / 166 |
+| 3 | 3 | 0.3 | 245 | 6.9345 | 539 | 166 / 166 | 250 | 6.9402 | 544 | 170 / 170 |
+| 3 | 3 | 0.5 | 231 | 6.9900 | 525 | 166 / 166 | 252 | 6.8424 | 546 | 189 / 189 |
+| 5 | 1 | 0.1 | 307 | 6.7814 | 601 | 169 / 169 | 321 | 6.7877 | 615 | 170 / 170 |
+| 5 | 1 | 0.3 | 334 | 6.8113 | 628 | 171 / 171 | 347 | 6.8059 | 641 | 175 / 175 |
+| 5 | 1 | 0.5 | 312 | 6.9097 | 606 | 170 / 170 | 396 | 6.7120 | 690 | 205 / 205 |
+| 5 | 3 | 0.1 | 236 | 6.9262 | 530 | 164 / 164 | 246 | 6.9449 | 540 | 165 / 165 |
+| 5 | 3 | 0.3 | 241 | 6.9339 | 535 | 167 / 167 | 248 | 6.9395 | 542 | 170 / 170 |
+| 5 | 3 | 0.5 | 226 | 6.9877 | 520 | 167 / 167 | 253 | 6.8524 | 547 | 191 / 191 |
+| 10 | 1 | 0.1 | 279 | 6.8532 | 573 | 159 / 159 | 301 | 6.9977 | 595 | 160 / 160 |
+| 10 | 1 | 0.3 | 323 | 6.8494 | 617 | 162 / 162 | 348 | 6.8356 | 642 | 172 / 172 |
+| 10 | 1 | 0.5 | 307 | 6.9922 | 601 | 156 / 156 | 400 | 6.7161 | 694 | 207 / 207 |
+| 10 | 3 | 0.1 | 209 | 7.0162 | 503 | 157 / 157 | 225 | 7.1753 | 519 | 155 / 155 |
+| 10 | 3 | 0.3 | 226 | 6.9838 | 520 | 159 / 159 | 246 | 6.9824 | 540 | 166 / 166 |
+| 10 | 3 | 0.5 | 212 | 7.0754 | 506 | 153 / 153 | 256 | 6.8671 | 550 | 192 / 192 |
+| 15 | 1 | 0.1 | 256 | 6.8331 | 550 | 160 / 160 | 276 | 6.9195 | 570 | 162 / 162 |
+| 15 | 1 | 0.3 | 301 | 6.8830 | 595 | 162 / 162 | 337 | 6.7932 | 631 | 173 / 173 |
+| 15 | 1 | 0.5 | 302 | 6.9865 | 596 | 158 / 158 | 405 | 6.7353 | 699 | 212 / 212 |
+| 15 | 3 | 0.1 | **191** | 7.0087 | 485 | 156 / 156 | **204** | 7.0829 | 498 | 156 / 156 |
+| 15 | 3 | 0.3 | 212 | 7.0131 | 506 | 158 / 158 | 229 | 6.9451 | 523 | 167 / 167 |
+| 15 | 3 | 0.5 | 207 | 7.0767 | 501 | 153 / 153 | 253 | 6.8937 | 547 | 193 / 193 |
+
+Chosen (bold): both trackers at max_age 15, min_hits 3, IoU gate 0.1, the grid's largest max_age. Committed in `configs/tracking.yaml` [`7a5ed7a`](../../../commit/7a5ed7a) before any held-out sequence was scored.
+
+Held-out sweep, seeds 100-119 (20 sequences, 1,200 frames per cell), `scripts/track_flyover.py sweep` at `7a5ed7a`, clean tree, run `track_sweep_20261022T235853Z`. Settings: greedy and SORT both max_age 15, min_hits 3, IoU gate 0.1 unless the row varies one. Counts are summed over the 20 sequences; MOTA and IDF1 are motmetrics' overall values (counts summed before dividing). The (K - G)/G spread is over the 20 per-sequence values. Hand-written IDSW equals motmetrics' on every sequence of every cell.
+
+**pan_speed** (default 4)
+
+| value | tracker | MOTA | IDF1 | IDSW hand / mm | FP | FN | K | G | K - G | (K - G)/G median [min, max] | dropped (ignore) | detections | bounces |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2 | no tracker | -0.111 | 0.032 | 17,687 / 17,687 | 2,678 | 163 | 20,993 | 628 | 20,365 | 32.750 [27.514, 64.667] | 6,216 | 27,209 | 22 (per sequence 0-3) |
+| 2 | greedy IoU | 0.899 | 0.733 | 322 / 322 | 1,155 | 381 | 947 | 628 | 319 | 0.536 [0.167, 2.000] | 4,726 | 27,209 | 22 (per sequence 0-3) |
+| 2 | SORT | 0.898 | 0.729 | 324 / 324 | 1,169 | 395 | 945 | 628 | 317 | 0.487 [0.222, 2.000] | 4,700 | 27,209 | 22 (per sequence 0-3) |
+| 4 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 | 34 (per sequence 1-3) |
+| 4 | greedy IoU | 0.894 | 0.732 | 355 / 355 | 1,187 | 442 | 1,035 | 705 | 330 | 0.493 [0.222, 1.750] | 4,359 | 27,518 | 34 (per sequence 1-3) |
+| 4 | SORT | 0.890 | 0.725 | 383 / 383 | 1,176 | 499 | 1,103 | 705 | 398 | 0.552 [0.231, 1.917] | 4,349 | 27,518 | 34 (per sequence 1-3) |
+| 6 | no tracker | -0.109 | 0.038 | 17,804 / 17,804 | 2,818 | 165 | 21,389 | 767 | 20,622 | 27.596 [21.721, 41.286] | 6,141 | 27,530 | 50 (per sequence 1-4) |
+| 6 | greedy IoU | 0.880 | 0.733 | 438 / 438 | 1,185 | 617 | 1,147 | 767 | 380 | 0.501 [0.224, 1.357] | 3,851 | 27,530 | 50 (per sequence 1-4) |
+| 6 | SORT | 0.870 | 0.715 | 504 / 504 | 1,181 | 756 | 1,269 | 767 | 502 | 0.631 [0.269, 1.636] | 3,838 | 27,530 | 50 (per sequence 1-4) |
+| 8 | no tracker | -0.107 | 0.040 | 17,439 / 17,439 | 2,749 | 155 | 20,978 | 790 | 20,188 | 25.724 [20.587, 36.562] | 6,396 | 27,374 | 65 (per sequence 2-5) |
+| 8 | greedy IoU | 0.867 | 0.708 | 507 / 507 | 1,108 | 837 | 1,191 | 790 | 401 | 0.512 [0.183, 1.250] | 3,788 | 27,374 | 65 (per sequence 2-5) |
+| 8 | SORT | 0.840 | 0.659 | 703 / 703 | 1,092 | 1,140 | 1,358 | 790 | 568 | 0.688 [0.302, 1.788] | 3,822 | 27,374 | 65 (per sequence 2-5) |
+
+**occlusion_frames** (default 10)
+
+| value | tracker | MOTA | IDF1 | IDSW hand / mm | FP | FN | K | G | K - G | (K - G)/G median [min, max] | dropped (ignore) | detections |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 5 | no tracker | -0.120 | 0.032 | 19,772 / 19,772 | 3,197 | 239 | 23,679 | 710 | 22,969 | 33.417 [26.298, 48.769] | 6,945 | 30,624 |
+| 5 | greedy IoU | 0.888 | 0.713 | 390 / 390 | 1,418 | 513 | 1,028 | 710 | 318 | 0.469 [0.153, 1.154] | 4,894 | 30,624 |
+| 5 | SORT | 0.886 | 0.723 | 390 / 390 | 1,407 | 560 | 1,092 | 710 | 382 | 0.524 [0.256, 1.538] | 4,867 | 30,624 |
+| 10 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 10 | greedy IoU | 0.894 | 0.732 | 355 / 355 | 1,187 | 442 | 1,035 | 705 | 330 | 0.493 [0.222, 1.750] | 4,359 | 27,518 |
+| 10 | SORT | 0.890 | 0.725 | 383 / 383 | 1,176 | 499 | 1,103 | 705 | 398 | 0.552 [0.231, 1.917] | 4,349 | 27,518 |
+| 15 | no tracker | -0.119 | 0.039 | 15,874 / 15,874 | 2,694 | 147 | 19,267 | 699 | 18,568 | 27.564 [19.800, 52.500] | 5,700 | 24,967 |
+| 15 | greedy IoU | 0.885 | 0.749 | 328 / 328 | 1,122 | 474 | 1,057 | 699 | 358 | 0.477 [0.176, 2.300] | 3,965 | 24,967 |
+| 15 | SORT | 0.882 | 0.740 | 356 / 356 | 1,106 | 509 | 1,116 | 699 | 417 | 0.566 [0.339, 2.300] | 3,959 | 24,967 |
+
+**conf** (default 0.25)
+
+| value | tracker | MOTA | IDF1 | IDSW hand / mm | FP | FN | K | G | K - G | (K - G)/G median [min, max] | dropped (ignore) | detections |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.1 | no tracker | -0.209 | 0.034 | 17,803 / 17,803 | 4,595 | 154 | 23,102 | 705 | 22,397 | 32.714 [26.109, 54.083] | 7,352 | 30,454 |
+| 0.1 | greedy IoU | 0.866 | 0.719 | 369 / 369 | 1,714 | 426 | 1,163 | 705 | 458 | 0.630 [0.361, 2.500] | 4,946 | 30,454 |
+| 0.1 | SORT | 0.863 | 0.712 | 394 / 394 | 1,672 | 492 | 1,252 | 705 | 547 | 0.747 [0.382, 2.167] | 4,868 | 30,454 |
+| 0.25 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 0.25 | greedy IoU | 0.894 | 0.732 | 355 / 355 | 1,187 | 442 | 1,035 | 705 | 330 | 0.493 [0.222, 1.750] | 4,359 | 27,518 |
+| 0.25 | SORT | 0.890 | 0.725 | 383 / 383 | 1,176 | 499 | 1,103 | 705 | 398 | 0.552 [0.231, 1.917] | 4,349 | 27,518 |
+| 0.5 | no tracker | -0.058 | 0.036 | 17,779 / 17,779 | 1,792 | 178 | 20,275 | 705 | 19,570 | 28.990 [21.152, 45.750] | 5,196 | 25,471 |
+| 0.5 | greedy IoU | 0.900 | 0.743 | 343 / 343 | 890 | 634 | 961 | 705 | 256 | 0.355 [0.103, 1.583] | 3,682 | 25,471 |
+| 0.5 | SORT | 0.898 | 0.739 | 361 / 361 | 874 | 667 | 1,020 | 705 | 315 | 0.438 [0.103, 1.667] | 3,687 | 25,471 |
+
+**max_age** (chosen 15)
+
+| value | tracker | MOTA | IDF1 | IDSW hand / mm | FP | FN | K | G | K - G | (K - G)/G median [min, max] | dropped (ignore) | detections |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 1 | greedy IoU | 0.886 | 0.713 | 392 / 392 | 1,177 | 550 | 1,202 | 705 | 497 | 0.679 [0.441, 1.750] | 4,341 | 27,518 |
+| 1 | SORT | 0.887 | 0.712 | 395 / 395 | 1,168 | 547 | 1,199 | 705 | 494 | 0.677 [0.471, 1.917] | 4,288 | 27,518 |
+| 5 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 5 | greedy IoU | 0.887 | 0.720 | 380 / 380 | 1,184 | 540 | 1,169 | 705 | 464 | 0.626 [0.441, 1.750] | 4,379 | 27,518 |
+| 5 | SORT | 0.887 | 0.712 | 398 / 398 | 1,161 | 548 | 1,196 | 705 | 491 | 0.668 [0.471, 1.917] | 4,323 | 27,518 |
+| 15 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 15 | greedy IoU | 0.894 | 0.732 | 355 / 355 | 1,187 | 442 | 1,035 | 705 | 330 | 0.493 [0.222, 1.750] | 4,359 | 27,518 |
+| 15 | SORT | 0.890 | 0.725 | 383 / 383 | 1,176 | 499 | 1,103 | 705 | 398 | 0.552 [0.231, 1.917] | 4,349 | 27,518 |
+
+**iou_gate** (chosen 0.1)
+
+| value | tracker | MOTA | IDF1 | IDSW hand / mm | FP | FN | K | G | K - G | (K - G)/G median [min, max] | dropped (ignore) | detections |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.1 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 0.1 | greedy IoU | 0.894 | 0.732 | 355 / 355 | 1,187 | 442 | 1,035 | 705 | 330 | 0.493 [0.222, 1.750] | 4,359 | 27,518 |
+| 0.1 | SORT | 0.890 | 0.725 | 383 / 383 | 1,176 | 499 | 1,103 | 705 | 398 | 0.552 [0.231, 1.917] | 4,349 | 27,518 |
+| 0.3 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 0.3 | greedy IoU | 0.892 | 0.725 | 370 / 370 | 1,090 | 563 | 1,118 | 705 | 413 | 0.576 [0.359, 1.833] | 4,259 | 27,518 |
+| 0.3 | SORT | 0.896 | 0.720 | 400 / 400 | 941 | 593 | 1,154 | 705 | 449 | 0.597 [0.385, 1.917] | 4,155 | 27,518 |
+| 0.5 | no tracker | -0.110 | 0.035 | 17,801 / 17,801 | 2,756 | 156 | 21,261 | 705 | 20,556 | 30.256 [22.652, 48.417] | 6,257 | 27,518 |
+| 0.5 | greedy IoU | 0.893 | 0.724 | 378 / 378 | 781 | 842 | 1,148 | 705 | 443 | 0.633 [0.333, 1.833] | 4,019 | 27,518 |
+| 0.5 | SORT | 0.890 | 0.706 | 447 / 447 | 496 | 1,101 | 1,220 | 705 | 515 | 0.721 [0.410, 2.000] | 3,505 | 27,518 |
+
+Greedy IoU and SORT give the same numbers in no cell. They come closest at pan speed 2 (K - G 319 vs
+317) and at max_age 1 (497 vs 494), the two cells where SORT's count error is lower, by 2 and 3 ids.
+In the other 11 of 13 distinct cells greedy IoU's count error is lower. IDF1 is higher for greedy in
+every cell except occlusion 5 (0.713 vs 0.723); MOTA differs by under 0.005 everywhere except
+pan speed 6 (0.880 vs 0.870) and 8 (0.867 vs 0.840), greedy higher in both.
+
+Headline dedup lines, defaults, held-out:
+
+- no tracker: 1,200 frames, 27,518 detections, 21,261 ids, vs 705 true modules
+- greedy IoU: 1,200 frames, 27,518 detections, 1,035 ids, vs 705 true modules
+- SORT: 1,200 frames, 27,518 detections, 1,103 ids, vs 705 true modules
+
+K counts the reported ids left after the ignore rule; ids on panels that fail the visibility rule
+(at the window edge or under the band) are not in K. The detections are all detections.
+
+### What the sweep shows
+
+- Both trackers cut the id count from 21,261 (no tracker, (K - G)/G median 30.3) to about 1.5 times the
+  true modules: (K - G)/G median 0.49 for greedy IoU and 0.55 for SORT at defaults, per-sequence range
+  0.22 to 1.75 and 0.23 to 1.92.
+- The constant-velocity Kalman filter does not reduce the count error on D5. SORT reports more surplus
+  ids than greedy IoU in 11 of 13 cells, and the gap grows with pan speed: SORT minus greedy K - G is
+  -2, 68, 122, 167 at 2, 4, 6, 8 px per frame. The bounces grow with pan speed too (22, 34, 50, 65
+  over 20 sequences), and every bounce reverses the window's velocity in one frame, so these rows
+  cannot separate speed from velocity reversals.
+- Detector confidence moves the count error most among the non-motion factors: (K - G)/G median
+  0.630 / 0.493 / 0.355 for greedy and 0.747 / 0.552 / 0.438 for SORT at conf 0.1 / 0.25 / 0.5, while FN
+  rises from 426 to 634 (greedy).
+- Longer track memory lowers the count error: greedy K - G 497 / 464 / 330 and SORT 494 / 491 / 398 at
+  max_age 1 / 5 / 15. A looser IoU gate does too: greedy 443 / 413 / 330 and SORT 515 / 449 / 398 at
+  0.5 / 0.3 / 0.1. Both agree with the development grid, where the largest max_age and the 0.1 gate won.
+- Occlusion length 5 to 15 frames changes K - G by at most 40 ids for either tracker at max_age 15.
+- The ignore rule drops 4,359 (greedy), 4,349 (SORT) and 6,257 (no tracker) hypotheses at defaults:
+  without it they would count as false positives on real panels.
