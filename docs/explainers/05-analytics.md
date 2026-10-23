@@ -419,7 +419,7 @@ Veić, *Applied Sciences* 12(2), 745, 2022):
 |---|---|---|
 | 1 | no abnormality | no imminent action |
 | 2 | thermal abnormality | check the cause and, if needed, rectify within a reasonable period |
-| 3 | safety-relevant thermal abnormality | interrupt operation promptly, check the cause, rectify |
+| 3 | safety-relevant thermal abnormality | interrupt operation without delay, check the cause, rectify |
 
 As described there, the classes carry recommended actions and no power-loss figure.
 

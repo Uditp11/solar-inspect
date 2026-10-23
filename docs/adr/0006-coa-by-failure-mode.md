@@ -19,7 +19,7 @@ Modules Affected by Hail", *Applied Sciences* 12(2), 745 (2022), doi:10.3390/app
 |---|---|---|
 | 1 | no abnormality | no imminent action |
 | 2 | thermal abnormality | check the cause and, if needed, rectify within a reasonable period |
-| 3 | safety-relevant thermal abnormality | interrupt operation promptly, check the cause, rectify |
+| 3 | safety-relevant thermal abnormality | interrupt operation without delay, check the cause, rectify |
 
 In practice a class is assigned from a pattern and a measured temperature difference. The
 data here cannot carry one. D1, the classifier's data, is 8-bit rendered imagery from mixed
