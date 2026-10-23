@@ -11,6 +11,147 @@ from libraries. The seam between the two is stated below.
 
 ---
 
+## Results: module 1, segmentation
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D3 sections) with
+the commit and run it came from. PV01 is 0.1 m RGB rooftop imagery from one region: this module is a
+**site-footprint / array-extent** primitive, and it does not compose with the thermal stages. Every
+number is per rooftop subset, never pooled. Test is 93 tiles, read once. Each interval is a 95%
+percentile bootstrap over the subset's test tiles (10,000 resamples, seed 0); the difference is
+**paired**, U-Net and colour rule scored on the same resampled tiles. Tiles within a scene are
+correlated, so these intervals are narrower than the truth; the number of spatially separate tile
+groups is given beside each.
+
+| Subset | U-Net IoU (test, once) | colour rule IoU (test) | U-Net minus colour rule (test, paired) | null model (test): IoU, pixel accuracy | Split size | U-Net IoU (val) |
+|---|---|---|---|---|---|---|
+| Brick | **0.9101**, 0.8593 to 0.9385 | 0.3068, 0.1876 to 0.4177 | +0.6033, 0.5073 to 0.6977 | 0, 0.9422 | 19 tiles, 8 groups (test, once) | 0.9074 (21 tiles) |
+| FlatConcrete | **0.7910**, 0.7350 to 0.8430 | 0.4350, 0.3790 to 0.4895 | +0.3560, 0.3232 to 0.3944 | 0, 0.5609 | 60 tiles, 3 groups (test, once) | 0.9272 (60 tiles) |
+| SteelTile | **0.9778**, 0.9620 to 0.9851 | 0.3912, 0.2232 to 0.5849 | +0.5867, 0.3980 to 0.7537 | 0, 0.7453 | 14 tiles, 2 groups (test, once) | 0.9455 (14 tiles) |
+
+U-Net, test, Brick / FlatConcrete / SteelTile: Dice 0.9529 / 0.8833 / 0.9888, precision 0.9601 /
+0.9703 / 0.9879, recall 0.9459 / 0.8106 / 0.9897. The U-Net is written from `torch.nn` layers and
+trained from scratch (8,633,441 parameters, no pretrained weights); the colour rule is **panel
+where 2B - R - G >= 24**, chosen on train; the null model predicts background everywhere. The
+evaluation config ([`configs/seg_eval.yaml`](configs/seg_eval.yaml)), with the SHA-256 of the one
+checkpoint allowed, was committed in [`49c44d9`](../../commit/49c44d9) before the test split was read;
+[`scripts/eval_seg.py`](scripts/eval_seg.py) refuses otherwise.
+
+- **Val**, the selection split (epoch 87, by the mean of the three per-subset val IoUs): the colour
+  rule scores 0.3967 / 0.6611 / 0.7313 there, and the paired U-Net lead is +0.5107 / +0.2660 /
+  +0.2143, every interval clear of 0. Selection flatters Brick's val IoU by 0.007 against the mean of
+  the last ten epochs, and the other two by less than 0.001.
+- **FlatConcrete test is below its val (0.7910 against 0.9272), and the drop is recall.** Post-hoc,
+  from the saved predictions: one 45-tile roof holds 99.4% of the subset's missed pixels (IoU 0.7808
+  there; the other two groups 0.9150 and 0.9393), where large stretches of panel render bright, close
+  to white, and are missed. The cause of that appearance is not established. On Brick and SteelTile
+  the remaining error is at array edges: 75% and 88% of the error pixels lie within 3 px of a true
+  boundary.
+- **Pixel accuracy misleads on Brick only.** The null model scores 0.9422 there by finding nothing;
+  the colour rule, at IoU 0.3068, scores 0.8950, below it.
+- **The panel share shifts between splits** (SteelTile test 25% against 53% in train; FlatConcrete
+  val and test 41% and 44% against 30%), so val, train and test numbers are not directly comparable.
+- **It does not transfer to thermal.** Run unchanged on D2's 51 thermal val frames, it marks one
+  pixel in 16.7 million as panel where ground-truth boxes cover 46%. A control that removes only
+  colour, PV01 val tiles converted to greyscale, collapses it as well (val IoU 0.0407 / 0.0466 /
+  0.0013 against 0.9074 / 0.9272 / 0.9455 in colour): the model needs colour, which is enough to
+  explain the thermal result; resolution, viewpoint and content are not tested separately.
+
+The split is by scene, linked across all three subsets, with SteelTile cut into blocks and a guard
+band ([ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). The walkthrough is in
+[`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
+
+## Results: module 2, detection
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D2 sections)
+with the commit and run it came from. Test is 63 images, 3,984 boxes, read once; each interval
+is a 95% percentile bootstrap over the 63 images (2,000 resamples) from that one pass's saved
+predictions. The operating confidence is 0.25, chosen on val.
+
+| Module | Data | Metric | Value | 95% interval | Split size |
+|---|---|---|---|---|---|
+| 2 · Detection | D2 | AP@0.5, 101-point, from scratch (= torchmetrics), YOLOv8n fine-tuned | **0.7552** | 0.6418 to 0.8438 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | AP@0.5:0.95, 101-point (= torchmetrics) | 0.5578 | 0.4675 to 0.6374 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | precision at conf 0.25, IoU 0.5 | 0.6025 | 0.4925 to 0.6872 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | recall at conf 0.25, IoU 0.5 | 0.7899 | 0.6969 to 0.8637 | 63 imgs, 3,984 boxes (test, once) |
+| 2 · Detection | D2 | panel-count MAE at conf 0.25, panels per frame | 25.48 | 19.65 to 31.94 | 63 imgs, 3,984 boxes (test, once) |
+
+Beside the headline, on the same test pass: AP@0.5 **all-point 0.7571** (the area under the
+whole precision envelope, VOC style, rather than COCO's 101 samples of it), and **Ultralytics'
+own 0.7562** (it scores boxes before clipping them to the frame and integrates its curve with the
+trapezoid rule, both measured on val). The config ([`configs/det_yolo.yaml`](configs/det_yolo.yaml))
+was committed and pushed in [`83e51cb`](../../commit/83e51cb) before the test split was read, with
+the SHA-256 of the one checkpoint allowed to be evaluated;
+[`scripts/eval_test_det.py`](scripts/eval_test_det.py) refuses otherwise.
+
+- **Test is far below val.** The same model scores AP@0.5 0.9745, AP@0.5:0.95 0.8249 and a count
+  MAE of 1.88 on val (51 images, 4,929 boxes); the test intervals do not reach those values. Test
+  is a later sortie of the same flight, held out to measure this kind of shift (ADR 0002), and
+  val chose the epoch, the model and the operating point, so its numbers were expected to be
+  optimistic; how much of the gap is each is not separated. On test the count error is mostly
+  over-counting (+19.7 panels per frame on average). Post-hoc, from the saved outputs and the
+  labels (no number above changes): the over-count is boxes beside labelled panels, duplicate or
+  misplaced (2,045 of 2,076 false positives), not boxes on background (22). The worst frames are
+  close views of rows crossing the frame steeply, where the axis-aligned boxes of neighbouring
+  panels overlap, and per-frame AP@0.5 follows box aspect ratio (Spearman +0.57). Frames whose
+  median box has aspect ratio w/h below 1.1: none of 136 in train, 22 of 63 in test. On those 22,
+  test AP@0.5 is 0.2253; on the other 41 it is 0.9223 (val 0.9745). This is consistent with a change
+  in row orientation relative to the camera between sorties, not separable from neighbour overlap;
+  oriented boxes are the standard remedy and were not tried.
+- **Tuning pass:** YOLOv8n against YOLOv8s, with and without brightness jitter, three seeds each,
+  under a rule declared before the first run. No arm beat the baseline by more than the noise floor
+  (0.010 in val AP@0.5:0.95), so the baseline YOLOv8n was kept.
+- **Operating point:** 0.25 has the lowest panel-count MAE on val (1.88). It did not transfer: on
+  test 0.5 has the lower count error (14.10), which is reported and not adopted.
+- **NMS sweep:** on val, count MAE runs from 3.49 at NMS IoU 0.3 to 1.88 at 0.7 and 3.41 at 0.8, but
+  without its one 584-panel frame it stays between 1.78 and 1.98 over the whole range. On that
+  frame's small panels the predicted boxes of neighbours overlap where the labels do not.
+
+**These numbers are not comparable to a published D2 number**: the published splits are
+contaminated and are not used (see [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md)).
+
+## Results: module 3, tracking
+
+Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D5 sections) with
+the commit and run it came from. **D5 is synthetic.** D2's frames do not overlap, so a real flyover
+cannot be rebuilt from them: each D5 sequence is a 320 x 256 window moving for 60 frames over one D2
+val frame, with random-walk acceleration, yaw, an altitude ramp and a drifting occluder, and the
+boxes the trackers see are the module 2 detector's real detections on every rendered window. The
+metrics, the settings rule and the sweep were committed before any metric number existed.
+
+Deduplication, held-out sequences (seeds 100 to 119), defaults (pan 4 px per frame, occlusion 10
+frames, detector conf 0.25):
+
+- no tracker: **1,200 frames, 27,518 detections, 21,261 ids, vs 705 true modules**
+- greedy IoU: **1,200 frames, 27,518 detections, 1,035 ids, vs 705 true modules**
+- SORT: **1,200 frames, 27,518 detections, 1,103 ids, vs 705 true modules**
+
+**Implementation correctness check on synthetic sequences, not a performance result:**
+
+| Tracker | MOTA | IDF1 | ID switches | FP | FN | K ids | G true modules | (K − G)/G, median [range] over 20 sequences |
+|---|---|---|---|---|---|---|---|---|
+| no tracker | -0.110 | 0.035 | 17,801 | 2,756 | 156 | 21,261 | 705 | 30.256 [22.652, 48.417] |
+| greedy IoU | 0.894 | 0.732 | 355 | 1,187 | 442 | 1,035 | 705 | 0.493 [0.222, 1.750] |
+| SORT | 0.890 | 0.725 | 383 | 1,176 | 499 | 1,103 | 705 | 0.552 [0.231, 1.917] |
+
+- **Settings, chosen on the 10 development sequences only:** both trackers at `max_age` 15,
+  `min_hits` 3, IoU gate 0.1, the lowest summed |K − G| in a declared 30-setting grid, committed in
+  [`configs/tracking.yaml`](configs/tracking.yaml) before any held-out sequence was scored.
+- **Sweep, one factor at a time on the held-out sequences:** greedy IoU, which has no motion model,
+  ends with fewer surplus ids than SORT in 11 of 13 cells; SORT is ahead only at pan speed 2 and at
+  `max_age` 1, by 2 and 3 ids. The gap grows with pan speed (SORT minus greedy: -2, 68, 122, 167 ids
+  at 2, 4, 6, 8 px per frame), and so do the window's velocity reversals at the frame bounds, so the
+  two are not separated.
+- **Post-hoc motion diagnostic, on ground-truth boxes:** one frame ahead, the last box always
+  overlaps the next at the 0.1 gate (median motion 3.8 px against a 62 x 37 px box), and SORT's
+  Kalman prediction is closer than the last box in median IoU at every speed, one frame ahead and
+  coasting 5 and 10 frames. So it does not explain why greedy wins; the effect of detector noise and
+  of the assignment was not measured.
+
+The hand-written ID-switch count equals motmetrics' on every sequence. Hypotheses that sit only on
+labelled panels failing the visibility rule (at the window edge or under the occluder) are dropped
+before scoring rather than counted as false positives. The walkthrough is in
+[`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
+
 ## Results: module 4, classification
 
 Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) with the
@@ -121,147 +262,6 @@ for row. The daily sister comparison is a different statistic from the per-times
 the Spearman above is that measured difference. Spatial queries (PostGIS `ST_DWithin`, a survey
 self-join) are written in the explainer and **not run**: no dataset here carries coordinates.
 
-## Results: module 2, detection
-
-Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D2 sections)
-with the commit and run it came from. Test is 63 images, 3,984 boxes, read once; each interval
-is a 95% percentile bootstrap over the 63 images (2,000 resamples) from that one pass's saved
-predictions. The operating confidence is 0.25, chosen on val.
-
-| Module | Data | Metric | Value | 95% interval | Split size |
-|---|---|---|---|---|---|
-| 2 · Detection | D2 | AP@0.5, 101-point, from scratch (= torchmetrics), YOLOv8n fine-tuned | **0.7552** | 0.6418 to 0.8438 | 63 imgs, 3,984 boxes (test, once) |
-| 2 · Detection | D2 | AP@0.5:0.95, 101-point (= torchmetrics) | 0.5578 | 0.4675 to 0.6374 | 63 imgs, 3,984 boxes (test, once) |
-| 2 · Detection | D2 | precision at conf 0.25, IoU 0.5 | 0.6025 | 0.4925 to 0.6872 | 63 imgs, 3,984 boxes (test, once) |
-| 2 · Detection | D2 | recall at conf 0.25, IoU 0.5 | 0.7899 | 0.6969 to 0.8637 | 63 imgs, 3,984 boxes (test, once) |
-| 2 · Detection | D2 | panel-count MAE at conf 0.25, panels per frame | 25.48 | 19.65 to 31.94 | 63 imgs, 3,984 boxes (test, once) |
-
-Beside the headline, on the same test pass: AP@0.5 **all-point 0.7571** (the area under the
-whole precision envelope, VOC style, rather than COCO's 101 samples of it), and **Ultralytics'
-own 0.7562** (it scores boxes before clipping them to the frame and integrates its curve with the
-trapezoid rule, both measured on val). The config ([`configs/det_yolo.yaml`](configs/det_yolo.yaml))
-was committed and pushed in [`83e51cb`](../../commit/83e51cb) before the test split was read, with
-the SHA-256 of the one checkpoint allowed to be evaluated;
-[`scripts/eval_test_det.py`](scripts/eval_test_det.py) refuses otherwise.
-
-- **Test is far below val.** The same model scores AP@0.5 0.9745, AP@0.5:0.95 0.8249 and a count
-  MAE of 1.88 on val (51 images, 4,929 boxes); the test intervals do not reach those values. Test
-  is a later sortie of the same flight, held out to measure this kind of shift (ADR 0002), and
-  val chose the epoch, the model and the operating point, so its numbers were expected to be
-  optimistic; how much of the gap is each is not separated. On test the count error is mostly
-  over-counting (+19.7 panels per frame on average). Post-hoc, from the saved outputs and the
-  labels (no number above changes): the over-count is boxes beside labelled panels, duplicate or
-  misplaced (2,045 of 2,076 false positives), not boxes on background (22). The worst frames are
-  close views of rows crossing the frame steeply, where the axis-aligned boxes of neighbouring
-  panels overlap, and per-frame AP@0.5 follows box aspect ratio (Spearman +0.57). Frames whose
-  median box has aspect ratio w/h below 1.1: none of 136 in train, 22 of 63 in test. On those 22,
-  test AP@0.5 is 0.2253; on the other 41 it is 0.9223 (val 0.9745). This is consistent with a change
-  in row orientation relative to the camera between sorties, not separable from neighbour overlap;
-  oriented boxes are the standard remedy and were not tried.
-- **Tuning pass:** YOLOv8n against YOLOv8s, with and without brightness jitter, three seeds each,
-  under a rule declared before the first run. No arm beat the baseline by more than the noise floor
-  (0.010 in val AP@0.5:0.95), so the baseline YOLOv8n was kept.
-- **Operating point:** 0.25 has the lowest panel-count MAE on val (1.88). It did not transfer: on
-  test 0.5 has the lower count error (14.10), which is reported and not adopted.
-- **NMS sweep:** on val, count MAE runs from 3.49 at NMS IoU 0.3 to 1.88 at 0.7 and 3.41 at 0.8, but
-  without its one 584-panel frame it stays between 1.78 and 1.98 over the whole range. On that
-  frame's small panels the predicted boxes of neighbours overlap where the labels do not.
-
-**These numbers are not comparable to a published D2 number**: the published splits are
-contaminated and are not used (see [ADR 0002](docs/adr/0002-d2-is-resplit-by-sortie.md)).
-
-## Results: module 3, tracking
-
-Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D5 sections) with
-the commit and run it came from. **D5 is synthetic.** D2's frames do not overlap, so a real flyover
-cannot be rebuilt from them: each D5 sequence is a 320 x 256 window moving for 60 frames over one D2
-val frame, with random-walk acceleration, yaw, an altitude ramp and a drifting occluder, and the
-boxes the trackers see are the module 2 detector's real detections on every rendered window. The
-metrics, the settings rule and the sweep were committed before any metric number existed.
-
-Deduplication, held-out sequences (seeds 100 to 119), defaults (pan 4 px per frame, occlusion 10
-frames, detector conf 0.25):
-
-- no tracker: **1,200 frames, 27,518 detections, 21,261 ids, vs 705 true modules**
-- greedy IoU: **1,200 frames, 27,518 detections, 1,035 ids, vs 705 true modules**
-- SORT: **1,200 frames, 27,518 detections, 1,103 ids, vs 705 true modules**
-
-**Implementation correctness check on synthetic sequences, not a performance result:**
-
-| Tracker | MOTA | IDF1 | ID switches | FP | FN | K ids | G true modules | (K − G)/G, median [range] over 20 sequences |
-|---|---|---|---|---|---|---|---|---|
-| no tracker | -0.110 | 0.035 | 17,801 | 2,756 | 156 | 21,261 | 705 | 30.256 [22.652, 48.417] |
-| greedy IoU | 0.894 | 0.732 | 355 | 1,187 | 442 | 1,035 | 705 | 0.493 [0.222, 1.750] |
-| SORT | 0.890 | 0.725 | 383 | 1,176 | 499 | 1,103 | 705 | 0.552 [0.231, 1.917] |
-
-- **Settings, chosen on the 10 development sequences only:** both trackers at `max_age` 15,
-  `min_hits` 3, IoU gate 0.1, the lowest summed |K − G| in a declared 30-setting grid, committed in
-  [`configs/tracking.yaml`](configs/tracking.yaml) before any held-out sequence was scored.
-- **Sweep, one factor at a time on the held-out sequences:** greedy IoU, which has no motion model,
-  ends with fewer surplus ids than SORT in 11 of 13 cells; SORT is ahead only at pan speed 2 and at
-  `max_age` 1, by 2 and 3 ids. The gap grows with pan speed (SORT minus greedy: -2, 68, 122, 167 ids
-  at 2, 4, 6, 8 px per frame), and so do the window's velocity reversals at the frame bounds, so the
-  two are not separated.
-- **Post-hoc motion diagnostic, on ground-truth boxes:** one frame ahead, the last box always
-  overlaps the next at the 0.1 gate (median motion 3.8 px against a 62 x 37 px box), and SORT's
-  Kalman prediction is closer than the last box in median IoU at every speed, one frame ahead and
-  coasting 5 and 10 frames. So it does not explain why greedy wins; the effect of detector noise and
-  of the assignment was not measured.
-
-The hand-written ID-switch count equals motmetrics' on every sequence. Hypotheses that sit only on
-labelled panels failing the visibility rule (at the window edge or under the occluder) are dropped
-before scoring rather than counted as false positives. The walkthrough is in
-[`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
-
-## Results: module 1, segmentation
-
-Every number below is logged in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) (the D3 sections) with
-the commit and run it came from. PV01 is 0.1 m RGB rooftop imagery from one region: this module is a
-**site-footprint / array-extent** primitive, and it does not compose with the thermal stages. Every
-number is per rooftop subset, never pooled. Test is 93 tiles, read once. Each interval is a 95%
-percentile bootstrap over the subset's test tiles (10,000 resamples, seed 0); the difference is
-**paired**, U-Net and colour rule scored on the same resampled tiles. Tiles within a scene are
-correlated, so these intervals are narrower than the truth; the number of spatially separate tile
-groups is given beside each.
-
-| Subset | U-Net IoU (test, once) | colour rule IoU (test) | U-Net minus colour rule (test, paired) | null model (test): IoU, pixel accuracy | Split size | U-Net IoU (val) |
-|---|---|---|---|---|---|---|
-| Brick | **0.9101**, 0.8593 to 0.9385 | 0.3068, 0.1876 to 0.4177 | +0.6033, 0.5073 to 0.6977 | 0, 0.9422 | 19 tiles, 8 groups (test, once) | 0.9074 (21 tiles) |
-| FlatConcrete | **0.7910**, 0.7350 to 0.8430 | 0.4350, 0.3790 to 0.4895 | +0.3560, 0.3232 to 0.3944 | 0, 0.5609 | 60 tiles, 3 groups (test, once) | 0.9272 (60 tiles) |
-| SteelTile | **0.9778**, 0.9620 to 0.9851 | 0.3912, 0.2232 to 0.5849 | +0.5867, 0.3980 to 0.7537 | 0, 0.7453 | 14 tiles, 2 groups (test, once) | 0.9455 (14 tiles) |
-
-U-Net, test, Brick / FlatConcrete / SteelTile: Dice 0.9529 / 0.8833 / 0.9888, precision 0.9601 /
-0.9703 / 0.9879, recall 0.9459 / 0.8106 / 0.9897. The U-Net is written from `torch.nn` layers and
-trained from scratch (8,633,441 parameters, no pretrained weights); the colour rule is **panel
-where 2B - R - G >= 24**, chosen on train; the null model predicts background everywhere. The
-evaluation config ([`configs/seg_eval.yaml`](configs/seg_eval.yaml)), with the SHA-256 of the one
-checkpoint allowed, was committed in [`49c44d9`](../../commit/49c44d9) before the test split was read;
-[`scripts/eval_seg.py`](scripts/eval_seg.py) refuses otherwise.
-
-- **Val**, the selection split (epoch 87, by the mean of the three per-subset val IoUs): the colour
-  rule scores 0.3967 / 0.6611 / 0.7313 there, and the paired U-Net lead is +0.5107 / +0.2660 /
-  +0.2143, every interval clear of 0. Selection flatters Brick's val IoU by 0.007 against the mean of
-  the last ten epochs, and the other two by less than 0.001.
-- **FlatConcrete test is below its val (0.7910 against 0.9272), and the drop is recall.** Post-hoc,
-  from the saved predictions: one 45-tile roof holds 99.4% of the subset's missed pixels (IoU 0.7808
-  there; the other two groups 0.9150 and 0.9393), where large stretches of panel render bright, close
-  to white, and are missed. The cause of that appearance is not established. On Brick and SteelTile
-  the remaining error is at array edges: 75% and 88% of the error pixels lie within 3 px of a true
-  boundary.
-- **Pixel accuracy misleads on Brick only.** The null model scores 0.9422 there by finding nothing;
-  the colour rule, at IoU 0.3068, scores 0.8950, below it.
-- **The panel share shifts between splits** (SteelTile test 25% against 53% in train; FlatConcrete
-  val and test 41% and 44% against 30%), so val, train and test numbers are not directly comparable.
-- **It does not transfer to thermal.** Run unchanged on D2's 51 thermal val frames, it marks one
-  pixel in 16.7 million as panel where ground-truth boxes cover 46%. A control that removes only
-  colour, PV01 val tiles converted to greyscale, collapses it as well (val IoU 0.0407 / 0.0466 /
-  0.0013 against 0.9074 / 0.9272 / 0.9455 in colour): the model needs colour, which is enough to
-  explain the thermal result; resolution, viewpoint and content are not tested separately.
-
-The split is by scene, linked across all three subsets, with SteelTile cut into blocks and a guard
-band ([ADR 0005](docs/adr/0005-d3-is-split-by-scene.md)). The walkthrough is in
-[`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
-
 ## Scope: what this is and what it is not
 
 What has finished is module 4, module 2, module 3, module 1 and module 5. A small CNN written from scratch and an ImageNet ResNet-18 were
@@ -368,19 +368,35 @@ optional either: without the `--extra-index-url` line in `requirements.txt`, pip
 
 ## Modules
 
-### 4 · Classification and distillation (finished)
+### 1 · Segmentation, site footprint (finished)
 
-Twelve-class defect classification on D1: No-Anomaly plus eleven defect types. A
-116k-parameter CNN written from scratch
-([`model.py`](src/solar_inspect/classification/model.py)) is compared with an ImageNet
-ResNet-18 fine-tuned on single-channel crops
-([`resnet.py`](src/solar_inspect/classification/resnet.py)). Three imbalance treatments
-(class weights, focal loss, resampling) were ablated over three seeds against a noise floor
-of 0.02 declared before any arm ran; none beat plain cross-entropy. The ResNet-18 config was
-committed before the test split was read and evaluated once. Temperature scaling, a
-base-rate correction to 2.2% field prevalence and a distillation run came after. Every run
-is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
-[`docs/explainers/04-classification.md`](docs/explainers/04-classification.md).
+Binary panel masks on D3 (PV01), 256 x 256 RGB rooftop tiles at 0.1 m from a single geography. It is
+a **site-footprint / array-extent** primitive; it does not compose with the thermal stages and it
+cannot normalise thermal statistics. A U-Net written from `torch.nn` layers
+([`unet.py`](src/solar_inspect/segmentation/unet.py)) is trained from scratch with BCE plus soft
+Dice, on a split built by scene and linked across the three rooftop subsets, and selected on val;
+IoU, Dice and the soft Dice loss are written from scratch and unit-tested against hand-computed
+values. A one-threshold colour rule chosen on train and an all-background null model are scored on
+the same tiles. The evaluation config was committed before the test tiles were read once, and a
+transfer check on D2 thermal frames was declared before it ran. Every run is in
+[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
+
+Results are reported per rooftop subset, never pooled, because the class balance across the
+three subsets differs by a factor of ten (over all 645 tiles):
+
+| Subset | Masks | Positive pixels | A null all-background model scores |
+|---|---:|---:|---:|
+| Rooftop_Brick | 138 | 5.20% | 94.8% pixel accuracy, 0 IoU |
+| Rooftop_FlatConcrete | 413 | 33.65% | 66.4% pixel accuracy, 0 IoU |
+| Rooftop_SteelTile | 94 | 50.41% | 49.6% pixel accuracy, 0 IoU |
+| **Pooled** | 645 | 30.00% | 70.0% pixel accuracy, 0 IoU |
+
+That spread is the argument for per-subset reporting. Pooling hides it, and a pooled
+figure would make the null model look uniformly mediocre when on Brick it is deceptively
+strong and on SteelTile it is worse than a coin flip, because the positive class is the
+majority there. Per split the shares move: SteelTile's test tiles are 25% panel, and the null model
+scores 0.7453 on them.
 
 ### 2 · Detection (finished)
 
@@ -421,6 +437,20 @@ development sequences under a rule declared first, and a held-out sweep varies o
 Every run is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/03-tracking.md`](docs/explainers/03-tracking.md).
 
+### 4 · Classification and distillation (finished)
+
+Twelve-class defect classification on D1: No-Anomaly plus eleven defect types. A
+116k-parameter CNN written from scratch
+([`model.py`](src/solar_inspect/classification/model.py)) is compared with an ImageNet
+ResNet-18 fine-tuned on single-channel crops
+([`resnet.py`](src/solar_inspect/classification/resnet.py)). Three imbalance treatments
+(class weights, focal loss, resampling) were ablated over three seeds against a noise floor
+of 0.02 declared before any arm ran; none beat plain cross-entropy. The ResNet-18 config was
+committed before the test split was read and evaluated once. Temperature scaling, a
+base-rate correction to 2.2% field prevalence and a distillation run came after. Every run
+is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
+[`docs/explainers/04-classification.md`](docs/explainers/04-classification.md).
+
 ### 5 · Analytics on plant generation data, triage and SQL (finished)
 
 AC power regressed on the weather columns per plant, solved two ways from scratch (normal
@@ -434,36 +464,6 @@ checks, and a measured look at the confounders. Then triage: a `Triage` record b
 ran; and an SQL layer of five queries on SQLite, each cross-checked against pandas. Every run
 is in [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
 [`docs/explainers/05-analytics.md`](docs/explainers/05-analytics.md).
-
-### 1 · Segmentation, site footprint (finished)
-
-Binary panel masks on D3 (PV01), 256 x 256 RGB rooftop tiles at 0.1 m from a single geography. It is
-a **site-footprint / array-extent** primitive; it does not compose with the thermal stages and it
-cannot normalise thermal statistics. A U-Net written from `torch.nn` layers
-([`unet.py`](src/solar_inspect/segmentation/unet.py)) is trained from scratch with BCE plus soft
-Dice, on a split built by scene and linked across the three rooftop subsets, and selected on val;
-IoU, Dice and the soft Dice loss are written from scratch and unit-tested against hand-computed
-values. A one-threshold colour rule chosen on train and an all-background null model are scored on
-the same tiles. The evaluation config was committed before the test tiles were read once, and a
-transfer check on D2 thermal frames was declared before it ran. Every run is in
-[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md), and the walkthrough is in
-[`docs/explainers/01-segmentation.md`](docs/explainers/01-segmentation.md).
-
-Results are reported per rooftop subset, never pooled, because the class balance across the
-three subsets differs by a factor of ten (over all 645 tiles):
-
-| Subset | Masks | Positive pixels | A null all-background model scores |
-|---|---:|---:|---:|
-| Rooftop_Brick | 138 | 5.20% | 94.8% pixel accuracy, 0 IoU |
-| Rooftop_FlatConcrete | 413 | 33.65% | 66.4% pixel accuracy, 0 IoU |
-| Rooftop_SteelTile | 94 | 50.41% | 49.6% pixel accuracy, 0 IoU |
-| **Pooled** | 645 | 30.00% | 70.0% pixel accuracy, 0 IoU |
-
-That spread is the argument for per-subset reporting. Pooling hides it, and a pooled
-figure would make the null model look uniformly mediocre when on Brick it is deceptively
-strong and on SteelTile it is worse than a coin flip, because the positive class is the
-majority there. Per split the shares move: SteelTile's test tiles are 25% panel, and the null model
-scores 0.7453 on them.
 
 ---
 
