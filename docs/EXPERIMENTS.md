@@ -1580,3 +1580,67 @@ What it shows, and what it does not:
   explain the sweep's result. What it leaves untested is the difference between true boxes and the
   detector's: SORT's filter runs on detections, with duplicates and box jitter, and greedy and SORT
   also differ in the assignment. Neither was measured here.
+
+## D3 segmentation: build
+
+Fri 23 Oct 2026. Split [`f2b0465`](../../../commit/f2b0465) (ADR 0005); U-Net
+[`ab9b2d5`](../../../commit/ab9b2d5); loader and training loop [`227d183`](../../../commit/227d183);
+`configs/seg_unet.yaml` [`bc7df9d`](../../../commit/bc7df9d), committed before any training run;
+colour baseline [`fbeb0f2`](../../../commit/fbeb0f2).
+
+**Split** `b5924638`, by scene, scenes linked over all three subsets at name-coordinate distance
+<= 4.5 (touching, corners included): 64 scenes. SteelTile is cut into blocks along the long axis of
+its two large scenes; every other scene goes whole (seed 0, 20,000 draws, about 70 / 15 / 15 per
+subset); train tiles touching a val or test tile are guard tiles and are used for nothing.
+
+| Subset | train | val | test | guard | fg train | fg val | fg test |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Brick | 98 | 21 | 19 | 0 | 0.0482 | 0.0647 | 0.0578 |
+| FlatConcrete | 293 | 60 | 60 | 0 | 0.2999 | 0.4123 | 0.4391 |
+| SteelTile | 54 | 14 | 14 | 12 | 0.5278 | 0.5692 | 0.2547 |
+
+Minimum distance from any val or test tile to any train tile, per subset (val / test): Brick
+5.099 / 5.0, FlatConcrete 18.111 / 7.0, SteelTile 5.0 / 5.831. All above 4.5. The split script
+rebuilds the assignment byte-identically.
+
+**U-Net**, `torch.nn` layers only, base width 32, depth 4, bilinear upsampling then a 3x3 conv:
+8,633,441 parameters. Normalisation: per-channel mean [0.5312, 0.5323, 0.5396] and std [0.2478,
+0.2475, 0.2561], train tiles only.
+
+**Smoke run** `seg_unet_20261023T144455Z` at `bc7df9d`, clean tree, override `epochs=5` (the cosine
+schedule therefore spans 5 epochs, not 100). RTX 4060 Laptop GPU, AMP on. Median 4.92 s per epoch
+(4.59 s training, the rest val), wall 27.0 s, peak VRAM 2,077 MiB allocated / 3,526 MiB reserved.
+
+| epoch | train loss | val IoU Brick | FlatConcrete | SteelTile | mean |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 0.8692 | 0.1946 | 0.5713 | 0.7318 | 0.4992 |
+| 2 | 0.6909 | 0.5186 | 0.6762 | 0.8206 | 0.6718 |
+| 3 | 0.5722 | 0.3949 | 0.7615 | 0.8406 | 0.6656 |
+| 4 | 0.5313 | 0.5678 | 0.8596 | 0.8658 | 0.7644 |
+| 5 | 0.4638 | 0.4374 | 0.8319 | 0.8568 | 0.7087 |
+
+These are five-epoch numbers, a check that the loop learns, not a result. Brick val IoU moves by
+up to 0.17 between epochs (21 tiles, 6% panel pixels).
+
+**Colour baseline**, `scripts/baseline_seg.py` at `fbeb0f2`. One threshold on R, G, B or 2B - R - G,
+above or below, every integer value, chosen on the mean of the three per-subset **train** IoUs.
+Chosen: **panel where 2B - R - G >= 24** (mean train IoU 0.4299; the blue channel alone, B >= 106,
+reaches 0.3620). Scored once on val:
+
+| Subset | train IoU | val IoU | val Dice | val precision | val recall |
+|---|---:|---:|---:|---:|---:|
+| Brick | 0.2626 | 0.3967 | 0.5680 | 0.4201 | 0.8766 |
+| FlatConcrete | 0.4612 | 0.6611 | 0.7960 | 0.7902 | 0.8019 |
+| SteelTile | 0.5658 | 0.7313 | 0.8448 | 0.7968 | 0.8989 |
+
+The fixed rule scores higher on val than on train in every subset. Val holds more panel pixels than
+train for Brick and FlatConcrete, and a fixed rule's IoU rises with the positive share, so val and
+train IoUs on this split are not directly comparable.
+
+Null all-background model, pixel accuracy per split (its IoU is 0 everywhere):
+
+| Split | Brick | FlatConcrete | SteelTile |
+|---|---:|---:|---:|
+| train | 0.9518 | 0.7001 | 0.4722 |
+| val | 0.9353 | 0.5877 | 0.4308 |
+| test | 0.9422 | 0.5609 | 0.7453 |
